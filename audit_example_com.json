@@ -1,0 +1,157 @@
+{
+  "site": "example.com",
+  "audited_at": "2026-09-05T15:23:12Z",
+  "summary": {
+    "total_findings": 12,
+    "critical": 1,
+    "high": 6,
+    "medium": 4,
+    "low": 1
+  },
+  "findings": [
+    {
+      "title": "0 of 1 pages contain any schema.org JSON-LD",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "Sampled 1 pages; 1/1 (100%) have no <script type='application/ld+json'> block. Checked pages include: /.",
+      "suggested_action": {
+        "summary": "Implement schema.org JSON-LD markup across all page types. Start with Organization on the homepage, then Product/Article/FAQPage on relevant pages. Use Google's Structured Data Markup Helper.",
+        "priority": "critical"
+      },
+      "id": "F-001"
+    },
+    {
+      "title": "No sitemap.xml discoverable",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "Checked: https://example.com/sitemap.xml (404), https://example.com/sitemap_index.xml (404). robots.txt contains no Sitemap: directive. Without a sitemap, AI crawlers must rely entirely on link discovery.",
+      "suggested_action": {
+        "summary": "Generate an XML sitemap and host it at /sitemap.xml. Declare it in robots.txt with 'Sitemap: https://yourdomain.com/sitemap.xml'. Submit it to Google Search Console and Bing Webmaster Tools.",
+        "priority": "high"
+      },
+      "id": "F-002"
+    },
+    {
+      "title": "Extremely low raw HTML word count suggests heavy client-side rendering",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "render-readability-audit",
+      "evidence": "Raw HTML of https://example.com contains only 19 visible words. Sites with fewer than 100 raw-HTML words typically require JS execution to render their primary content — invisible to AI crawlers.",
+      "suggested_action": {
+        "summary": "Implement Server-Side Rendering (SSR) or Static Site Generation (SSG) so your primary content is present in the raw HTTP response. Frameworks: Next.js (SSR/SSG), Nuxt (Vue), SvelteKit, Astro.",
+        "priority": "high"
+      },
+      "id": "F-003"
+    },
+    {
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Checked 1 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. Include <lastmod> dates in your sitemap.xml.",
+        "priority": "high"
+      },
+      "id": "F-004"
+    },
+    {
+      "title": "No sameAs links in any JSON-LD block",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Crawled 1 pages including homepage . 0 pages contain a 'sameAs' property in any JSON-LD entity. Without sameAs, AI knowledge graphs cannot confidently link this site to its verified external identity on Wikidata, LinkedIn, or Crunchbase.",
+      "suggested_action": {
+        "summary": "Add a 'sameAs' array to your Organization JSON-LD on the homepage. Minimum recommended links: LinkedIn company page, Crunchbase profile. For highest-trust disambiguation: create a Wikidata entry and link to it. Example: \"sameAs\": [\"https://www.linkedin.com/company/...\", \"https://www.wikidata.org/wiki/Q...\"]",
+        "priority": "high"
+      },
+      "id": "F-005"
+    },
+    {
+      "title": "No Organization JSON-LD found on any crawled page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Crawled 1 pages. No JSON-LD with @type Organization, LocalBusiness, or equivalent was found. AI assistants use Organization markup as the primary entity anchor for a brand.",
+      "suggested_action": {
+        "summary": "Add Organization JSON-LD to your homepage with: name, legalName, url, description, logo, sameAs, contactPoint. Reference: https://schema.org/Organization",
+        "priority": "high"
+      },
+      "id": "F-006"
+    },
+    {
+      "title": "No <nav> element on homepage",
+      "severity": "high",
+      "category": "engagement",
+      "skill_source": "engagement-audit",
+      "evidence": "Homepage (https://example.com) raw HTML contains no <nav> element. Without semantic navigation markup, screen readers, bots, and AI parsers cannot identify the site's navigation structure.",
+      "suggested_action": {
+        "summary": "Wrap your main navigation in a <nav> element with aria-label='Main navigation'. This is both an accessibility and SEO best practice.",
+        "priority": "high"
+      },
+      "id": "F-007"
+    },
+    {
+      "title": "robots.txt not found or unreachable",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "GET https://example.com/robots.txt returned status connection error. Without a robots.txt, crawlers may apply conservative default policies.",
+      "suggested_action": {
+        "summary": "Create a robots.txt at the root of your domain. Explicitly allow all crawlers with 'User-agent: *\\nAllow: /' to signal openness to AI and search indexers.",
+        "priority": "medium"
+      },
+      "id": "F-008"
+    },
+    {
+      "title": "No About/Company page found",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Checked paths: /about, /about-us, /company, /who-we-are, /our-story. None returned HTTP 200. An About page is a key identity signal that AI models use to understand a brand's purpose and distinguish it from peers.",
+      "suggested_action": {
+        "summary": "Create an /about page with: company name (full legal name), founding year, headquarters location, industry/vertical, mission statement, and key differentiators. Include at least 3 specific disambiguating facts.",
+        "priority": "medium"
+      },
+      "id": "F-009"
+    },
+    {
+      "title": "No links to external authority or social platforms found",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Scanned all external links across 1 pages. No links to LinkedIn, Twitter/X, Wikidata, Crunchbase, GitHub, or other authority platforms were found. External identity links help AI models verify and locate the brand.",
+      "suggested_action": {
+        "summary": "Add links to your verified social/authority profiles in the site footer or About page. Minimum: LinkedIn and one high-trust platform (Wikidata, Crunchbase, or GitHub). Also add these as sameAs values in your Organization JSON-LD.",
+        "priority": "medium"
+      },
+      "id": "F-010"
+    },
+    {
+      "title": "No call-to-action detected above the fold on homepage",
+      "severity": "medium",
+      "category": "engagement",
+      "skill_source": "engagement-audit",
+      "evidence": "Scanned the first 25% of homepage (https://example.com) HTML body for CTA keywords (get started, start free, sign up, signup, try for free, try free, free trial, buy now...). None found in above-fold region. Visitors arriving from AI assistant recommendations need an immediate next action.",
+      "suggested_action": {
+        "summary": "Place a prominent CTA button/link in the hero section of the homepage. Use action-oriented text (e.g., 'Start Free Trial', 'Get a Demo', 'Shop Now'). Ensure it's visible without scrolling on desktop (above ~700px).",
+        "priority": "medium"
+      },
+      "id": "F-011"
+    },
+    {
+      "title": "Playwright not available — render gap analysis skipped",
+      "severity": "low",
+      "category": "discoverability",
+      "skill_source": "render-readability-audit",
+      "evidence": "The 'playwright' Python package is not installed in this environment. JavaScript render gap analysis requires Playwright with headless Chromium. Raw HTML analysis only was performed.",
+      "suggested_action": {
+        "summary": "Install Playwright and Chromium: pip install playwright && playwright install chromium. Re-run to get full render gap analysis.",
+        "priority": "low"
+      },
+      "id": "F-012"
+    }
+  ]
+}

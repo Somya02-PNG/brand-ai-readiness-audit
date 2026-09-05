@@ -1,0 +1,205 @@
+{
+  "site": "nytimes.com",
+  "audited_at": "2026-09-05T15:45:32Z",
+  "summary": {
+    "total_findings": 16,
+    "critical": 7,
+    "high": 4,
+    "medium": 5,
+    "low": 0
+  },
+  "findings": [
+    {
+      "title": "AI crawler 'GPTBot' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents GPTBot (OpenAI's GPT crawler) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: GPTBot.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'GPTBot' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-001"
+    },
+    {
+      "title": "AI crawler 'ChatGPT-User' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents ChatGPT-User (ChatGPT browsing plugin) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: ChatGPT-User.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'ChatGPT-User' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-002"
+    },
+    {
+      "title": "AI crawler 'Google-Extended' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents Google-Extended (Google AI training crawler) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: Google-Extended.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'Google-Extended' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-003"
+    },
+    {
+      "title": "AI crawler 'PerplexityBot' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents PerplexityBot (Perplexity AI crawler) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: PerplexityBot.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'PerplexityBot' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-004"
+    },
+    {
+      "title": "AI crawler 'anthropic-ai' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents anthropic-ai (Anthropic Claude crawler) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: anthropic-ai.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'anthropic-ai' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-005"
+    },
+    {
+      "title": "AI crawler 'CCBot' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents CCBot (Common Crawl (used by many LLM training sets)) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: CCBot.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'CCBot' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-006"
+    },
+    {
+      "title": "AI crawler 'Omgilibot' blocked by robots.txt",
+      "severity": "critical",
+      "category": "discoverability",
+      "skill_source": "crawl-access-audit",
+      "evidence": "robots.txt Disallow rule prevents Omgilibot (Webz.io AI crawler) from accessing: /, /products, /blog, /pricing, /about, /faq, /shop. Full robots.txt snippet contains User-agent: Omgilibot.",
+      "suggested_action": {
+        "summary": "Review the Disallow rules for 'Omgilibot' in robots.txt. If you want AI assistants to cite your content, remove or narrow these rules. To allow all AI crawlers: ensure no User-agent block covers GPTBot, anthropic-ai, or Google-Extended without a compensating Allow rule.",
+        "priority": "critical"
+      },
+      "id": "F-007"
+    },
+    {
+      "title": "86.0% of content on /sitemap absent from raw HTML",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "render-readability-audit",
+      "evidence": "Raw HTML: 236 words. Playwright-rendered: 487 words. Render gap: 86.0% of rendered words absent from raw crawler view. Affected URL: https://nytimes.com/sitemap",
+      "suggested_action": {
+        "summary": "Implement SSR or SSG so content is in the initial HTML response. At minimum, ensure product names, prices, and key facts appear in raw HTML. Use Next.js getServerSideProps/getStaticProps or equivalent.",
+        "priority": "high"
+      },
+      "id": "F-008"
+    },
+    {
+      "title": "Phone number inconsistency — 3 distinct values across pages",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Found 3 different phone numbers across 15 pages. Details: '2125568034' on 1 page(s): https://nytimes.com/section/jobs; '8002384637' on 1 page(s): https://nytimes.com/section/jobs; '8007537795' on 1 page(s): https://nytimes.com/subscription/groups?Pardot_Campaign_Code_Form_Input=89FQX. Inconsistent contact info causes AI models to distrust the site's data.",
+      "suggested_action": {
+        "summary": "Standardize the phone number in a single CMS variable or component. Use E.164 format (e.g., +1-800-555-0100) in JSON-LD 'telephone' field. Ensure all page templates reference the same source of truth.",
+        "priority": "high"
+      },
+      "id": "F-009"
+    },
+    {
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Checked 14 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. Include <lastmod> dates in your sitemap.xml.",
+        "priority": "high"
+      },
+      "id": "F-010"
+    },
+    {
+      "title": "No Organization JSON-LD found on any crawled page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Crawled 12 pages. No JSON-LD with @type Organization, LocalBusiness, or equivalent was found. AI assistants use Organization markup as the primary entity anchor for a brand.",
+      "suggested_action": {
+        "summary": "Add Organization JSON-LD to your homepage with: name, legalName, url, description, logo, sameAs, contactPoint. Reference: https://schema.org/Organization",
+        "priority": "high"
+      },
+      "id": "F-011"
+    },
+    {
+      "title": "Blog/article pages detected but no Article JSON-LD found",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "URL patterns suggest this site has blog or article pages, but no Article or BlogPosting JSON-LD was found. AI assistants rely on Article markup to properly attribute authored content.",
+      "suggested_action": {
+        "summary": "Add Article or BlogPosting JSON-LD to all blog posts with: headline, datePublished, dateModified, author (Person with name), image.",
+        "priority": "medium"
+      },
+      "id": "F-012"
+    },
+    {
+      "title": "Multiple distinct email addresses (3) found across site",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Found 3 distinct email addresses: 'nytjobs@nytimes.com', 'businesscare@nytimes.com', 'groupsubs@nytimes.com'. While multiple emails may be intentional, excessive variety can confuse AI knowledge graphs.",
+      "suggested_action": {
+        "summary": "Confirm these email addresses are all intentional. For primary contact, use a single canonical email in Organization JSON-LD 'email' field.",
+        "priority": "medium"
+      },
+      "id": "F-013"
+    },
+    {
+      "title": "sameAs present but missing high-trust disambiguators: Wikidata, Crunchbase",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Found sameAs links to: Facebook, Instagram, YouTube, LinkedIn, Wikipedia, Twitter/X. Missing high-trust identity anchors: Wikidata, Crunchbase. Wikidata/Wikipedia/Crunchbase entries are the strongest signals for AI entity resolution.",
+      "suggested_action": {
+        "summary": "Add the following to your sameAs array: Wikidata, Crunchbase. If no Wikidata entry exists for your brand, create one at https://www.wikidata.org/wiki/Special:NewItem",
+        "priority": "medium"
+      },
+      "id": "F-014"
+    },
+    {
+      "title": "No About/Company page found",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Checked paths: /about, /about-us, /company, /who-we-are, /our-story. None returned HTTP 200. An About page is a key identity signal that AI models use to understand a brand's purpose and distinguish it from peers.",
+      "suggested_action": {
+        "summary": "Create an /about page with: company name (full legal name), founding year, headquarters location, industry/vertical, mission statement, and key differentiators. Include at least 3 specific disambiguating facts.",
+        "priority": "medium"
+      },
+      "id": "F-015"
+    },
+    {
+      "title": "3/62 internal links are broken (4.8%)",
+      "severity": "medium",
+      "category": "engagement",
+      "skill_source": "engagement-audit",
+      "evidence": "Checked 62 unique internal link targets; 3 returned HTTP 4xx/5xx. Sample broken URLs: https://nytimes.com/video (HTTP 0); https://nytimes.com/weather (HTTP 0); https://nytimes.com/books/best-sellers (HTTP 0).",
+      "suggested_action": {
+        "summary": "Set up 301 redirects for moved content. Delete or update links to removed pages. Add a link-checking step to your CI/CD pipeline (e.g., lychee, broken-link-checker). Configure your CMS to warn editors when linking to non-existent pages.",
+        "priority": "medium"
+      },
+      "id": "F-016"
+    }
+  ]
+}
