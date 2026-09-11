@@ -15,6 +15,7 @@ Returns JSON list of findings to stdout.
 import sys
 import json
 import time
+import asyncio
 from urllib.parse import urlparse, urljoin
 from collections import deque
 from typing import Optional
@@ -39,7 +40,7 @@ except ImportError as e:
 # Playwright is optional — degrade gracefully
 PLAYWRIGHT_AVAILABLE = False
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.async_api import async_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     pass
@@ -47,13 +48,12 @@ except ImportError:
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 MAX_RAW_CRAWL_PAGES = 15       # Pages to crawl for link discovery
-MAX_PLAYWRIGHT_PAGES = 3       # Max pages to render (keeps worker within orchestrator time budget)
+MAX_PLAYWRIGHT_PAGES = 4       # Max pages to render (maximum 4 pages per site)
 REQUEST_TIMEOUT = 12
 CRAWL_DELAY = 0.5
 RENDER_GAP_HIGH_THRESHOLD = 30.0   # % — high severity
 RENDER_GAP_MEDIUM_THRESHOLD = 15.0 # % — medium severity
-PLAYWRIGHT_TIMEOUT = 40_000        # ms — initial goto timeout
-PLAYWRIGHT_RETRY_TIMEOUT = 55_000  # ms — extended retry after both networkidle & load fail
+PLAYWRIGHT_TIMEOUT = 15_000        # ms — primary goto timeout (15000ms for domcontentloaded and load)
 
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -218,11 +218,11 @@ _CONSENT_SELECTORS = [
 ]
 
 
-def _dismiss_consent(page) -> None:
+async def _dismiss_consent(page) -> None:
     """Attempt to click common cookie/consent banners. Silently ignores failures."""
     for selector in _CONSENT_SELECTORS:
         try:
-            page.click(selector, timeout=2000)
+            await page.click(selector, timeout=1500)
             print(
                 f"[render-readability] Dismissed consent banner with selector: {selector}",
                 file=sys.stderr,
@@ -232,97 +232,131 @@ def _dismiss_consent(page) -> None:
             continue
 
 
-def render_page_playwright(url: str, pw_context, extra_wait_ms: int = 0) -> Optional[tuple[str, str]]:
-    """Render a page with Playwright. Returns (final_url, inner_text) or None."""
-
-    def _try_goto(page, wait_until: str, timeout_ms: int) -> bool:
-        """Attempt page.goto and return True on success. Handles ERR_NETWORK_CHANGED by
-        waiting 3 s and retrying once, since this is a transient local-network blip."""
-        for net_attempt in range(2):  # first try + one network-error retry
-            try:
-                page.goto(url, wait_until=wait_until, timeout=timeout_ms)
-                return True
-            except Exception as exc:
-                err = str(exc)
-                if "ERR_NETWORK_CHANGED" in err and net_attempt == 0:
-                    print(
-                        f"[render-readability] ERR_NETWORK_CHANGED on {url} "
-                        f"(wait_until={wait_until}). Waiting 3s for network to stabilise...",
-                        file=sys.stderr,
-                    )
-                    time.sleep(3)
-                    continue  # retry same wait_until after brief pause
-                # Genuine timeout or unrecoverable error
-                raise
-        return False  # unreachable but satisfies type checker
-
-    def _read_text(page, extra_wait_ms: int) -> str:
-        """Dismiss consent banners, wait, then return document.body.innerText."""
-        _dismiss_consent(page)
-        # Wait 2 s after dismissal for any re-render triggered by consent acceptance
-        try:
-            page.wait_for_timeout(2000)
-        except Exception:
-            pass
-        if extra_wait_ms > 0:
-            try:
-                page.wait_for_timeout(extra_wait_ms)
-            except Exception:
-                pass
-        return page.evaluate("document.body.innerText") or ""
-
+async def render_page_playwright_async(url: str, pw_context) -> Optional[tuple[str, str]]:
+    """
+    Render a page with Playwright.
+    Uses wait_until='domcontentloaded' with 15000ms timeout as the primary strategy,
+    followed by a fixed 3000ms extra wait for JS hydration.
+    Falls back to 'load' with 15000ms timeout if domcontentloaded fails.
+    If goto times out / fails, returns None immediately without retrying.
+    """
     page = None
-    for wait_until in ("networkidle", "load"):
+    for wait_until in ("domcontentloaded", "load"):
         try:
-            page = pw_context.new_page()
-            _try_goto(page, wait_until, PLAYWRIGHT_TIMEOUT)
-            # Extra wait for any deferred JS rendering (max 3s)
+            page = await pw_context.new_page()
+            for net_attempt in range(2):
+                try:
+                    await page.goto(url, wait_until=wait_until, timeout=PLAYWRIGHT_TIMEOUT)
+                    break
+                except Exception as exc:
+                    err = str(exc)
+                    if "ERR_NETWORK_CHANGED" in err and net_attempt == 0:
+                        print(
+                            f"[render-readability] ERR_NETWORK_CHANGED on {url} "
+                            f"(wait_until={wait_until}). Waiting 2s for network to stabilise...",
+                            file=sys.stderr,
+                        )
+                        await asyncio.sleep(2)
+                        continue
+                    raise
+
+            final_url = page.url
+            # Dismiss consent banners
+            await _dismiss_consent(page)
+            # Fixed 3000ms extra wait after domcontentloaded for JS rendering/hydration
             try:
-                page.wait_for_load_state("networkidle", timeout=3000)
+                await page.wait_for_timeout(3000)
             except Exception:
                 pass
-            final_url = page.url
-            text = _read_text(page, extra_wait_ms)
-            page.close()
+
+            text = await page.evaluate("document.body.innerText") or ""
+            await page.close()
             return (final_url, text)
         except Exception as exc:
             err_msg = str(exc)[:120]
             print(f"[render-readability] {wait_until} failed on {url}: {err_msg}", file=sys.stderr)
-            try:
-                if page:
-                    page.close()
-            except Exception:
-                pass
-            page = None
-            if "networkidle" in wait_until:
-                continue   # retry with 'load'
+            if page:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                page = None
+            if wait_until == "domcontentloaded":
+                continue
 
-    # If networkidle AND load both failed, retry once with a longer timeout
+    return None
+
+
+def render_page_playwright(url: str, pw_context, extra_wait_ms: int = 0) -> Optional[tuple[str, str]]:
+    """Synchronous fallback/wrapper for single-page render."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, render_page_playwright_async(url, pw_context)).result()
+    return asyncio.run(render_page_playwright_async(url, pw_context))
+
+
+async def process_target_async(page_url: str, pw_context) -> dict:
+    loop = asyncio.get_running_loop()
+    # 1. Raw fetch in thread pool
+    raw_resp = await loop.run_in_executor(None, safe_get, page_url)
+    if not raw_resp or raw_resp.status_code != 200:
+        return {"status": "raw_failed", "url": page_url}
+
+    raw_text = extract_visible_text_bs4(raw_resp.text)
+    raw_words = len(raw_text.split())
+
+    # 2. Render page with Playwright
+    result = await render_page_playwright_async(page_url, pw_context)
+    if result is None:
+        return {"status": "timed_out", "url": page_url}
+
+    final_url, rendered_text = result
+
+    # 3. If Playwright redirected, re-fetch raw for the final URL
+    if final_url.rstrip("/") != page_url.rstrip("/"):
+        raw_resp2 = await loop.run_in_executor(None, safe_get, final_url)
+        if raw_resp2 and raw_resp2.status_code == 200:
+            raw_text = extract_visible_text_bs4(raw_resp2.text)
+            raw_words = len(raw_text.split())
+
+    rendered_words = len(rendered_text.split())
+    ratio = rendered_words / raw_words if raw_words > 0 else 1.0
     print(
-        f"[render-readability] Both networkidle and load failed on {url} at {PLAYWRIGHT_TIMEOUT}ms. "
-        f"Increasing timeout to {PLAYWRIGHT_RETRY_TIMEOUT}ms and retrying once...",
+        f"[render-readability] {page_url}: rendered={rendered_words} raw={raw_words} ratio={ratio:.2%}",
         file=sys.stderr,
     )
-    try:
-        page = pw_context.new_page()
-        _try_goto(page, "load", PLAYWRIGHT_RETRY_TIMEOUT)
-        try:
-            page.wait_for_load_state("networkidle", timeout=3000)
-        except Exception:
-            pass
-        final_url = page.url
-        text = _read_text(page, extra_wait_ms)
-        page.close()
-        return (final_url, text)
-    except Exception as exc:
-        err_msg = str(exc)[:120]
-        print(f"[render-readability] retry (load, {PLAYWRIGHT_RETRY_TIMEOUT}ms) failed on {url}: {err_msg}", file=sys.stderr)
-        try:
-            if page:
-                page.close()
-        except Exception:
-            pass
-        return None
+
+    return {
+        "status": "ok",
+        "url": page_url,
+        "raw_text": raw_text,
+        "raw_words": raw_words,
+        "rendered_text": rendered_text,
+        "rendered_words": rendered_words,
+        "ratio": ratio,
+    }
+
+
+async def _run_playwright_audit_async(render_targets: list[str]) -> list[dict]:
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent=BROWSER_USER_AGENT,
+            viewport={"width": 1280, "height": 800},
+            ignore_https_errors=True,
+        )
+
+        tasks = [process_target_async(u, context) for u in render_targets]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        await context.close()
+        await browser.close()
+        return results
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
@@ -396,7 +430,7 @@ def run(url: str) -> list[dict]:
         ))
         return findings
 
-    # Select pages to render (prioritize homepage, then sample)
+    # Select pages to render (prioritize homepage, then sample up to MAX_PLAYWRIGHT_PAGES = 4)
     render_targets = pages[:MAX_PLAYWRIGHT_PAGES]
     gap_results = []
     timed_out_urls: list[str] = []     # pages that failed after all retries
@@ -407,76 +441,38 @@ def run(url: str) -> list[dict]:
     RENDER_RATIO_INCONCLUSIVE = 0.20
 
     try:
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent=BROWSER_USER_AGENT,
-                viewport={"width": 1280, "height": 800},
-                ignore_https_errors=True,
-            )
-            for page_url in render_targets:
-                time.sleep(CRAWL_DELAY)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
 
-                # Raw fetch
-                raw_resp = safe_get(page_url)
-                if not raw_resp or raw_resp.status_code != 200:
-                    continue
-                raw_text = extract_visible_text_bs4(raw_resp.text)
-                raw_words = len(raw_text.split())
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                target_results = pool.submit(
+                    asyncio.run, _run_playwright_audit_async(render_targets)
+                ).result()
+        else:
+            target_results = asyncio.run(_run_playwright_audit_async(render_targets))
 
-                # Rendered fetch
-                result = render_page_playwright(page_url, context)
-                if result is None:
-                    # Hard timeout / full failure even after the 55s retry inside render_page_playwright
-                    timed_out_urls.append(page_url)
-                    continue
-                final_url, rendered_text = result
+        for item in target_results:
+            if isinstance(item, Exception):
+                print(f"[render-readability] Target processing exception: {item}", file=sys.stderr)
+                continue
+            if item["status"] == "raw_failed":
+                continue
+            if item["status"] == "timed_out":
+                timed_out_urls.append(item["url"])
+                continue
+            if item["status"] == "ok":
+                page_url = item["url"]
+                raw_words = item["raw_words"]
+                rendered_words = item["rendered_words"]
+                ratio = item["ratio"]
+                raw_text = item["raw_text"]
+                rendered_text = item["rendered_text"]
 
-                # If Playwright redirected to a different page (e.g. login),
-                # use the raw fetch of the FINAL URL to get a fair raw baseline
-                if final_url.rstrip("/") != page_url.rstrip("/"):
-                    raw_resp2 = safe_get(final_url)
-                    if raw_resp2 and raw_resp2.status_code == 200:
-                        raw_text = extract_visible_text_bs4(raw_resp2.text)
-                        raw_words = len(raw_text.split())
-                rendered_words = len(rendered_text.split())
-
-                # Log rendered/raw ratio for every page (useful for debugging)
-                ratio = rendered_words / raw_words if raw_words > 0 else 1.0
-                print(
-                    f"[render-readability] {page_url}: rendered={rendered_words} raw={raw_words} "
-                    f"ratio={ratio:.2%}",
-                    file=sys.stderr,
-                )
-
-                # If rendered_words < raw_words, extraction was likely incomplete/premature.
-                # Attempt a 5s-wait retry to let JS fully hydrate.
-                if rendered_words < raw_words:
-                    print(
-                        f"[render-readability] rendered_words ({rendered_words}) < raw_words ({raw_words}) "
-                        f"on {page_url}. Retrying with 5000ms wait...",
-                        file=sys.stderr,
-                    )
-                    retry_result = render_page_playwright(page_url, context, extra_wait_ms=5000)
-                    if retry_result is not None:
-                        retry_final_url, retry_rendered_text = retry_result
-                        retry_rendered_words = len(retry_rendered_text.split())
-                        if retry_final_url.rstrip("/") != page_url.rstrip("/"):
-                            raw_resp2 = safe_get(retry_final_url)
-                            if raw_resp2 and raw_resp2.status_code == 200:
-                                raw_text = extract_visible_text_bs4(raw_resp2.text)
-                                raw_words = len(raw_text.split())
-                        if retry_rendered_words >= rendered_words:
-                            rendered_text = retry_rendered_text
-                            rendered_words = retry_rendered_words
-                            ratio = rendered_words / raw_words if raw_words > 0 else 1.0
-                            print(
-                                f"[render-readability] After retry: rendered={rendered_words} "
-                                f"raw={raw_words} ratio={ratio:.2%}",
-                                file=sys.stderr,
-                            )
-
-                # After all retries: check the rendered/raw ratio.
+                # After all checks: check the rendered/raw ratio.
                 # < 20% → inconclusive (likely JS-gated / consent-walled)
                 # ≥ 20% → compute render gap and include in gap_results
                 if raw_words > 0 and (rendered_words / raw_words) < RENDER_RATIO_INCONCLUSIVE:
@@ -496,9 +492,6 @@ def run(url: str) -> list[dict]:
                     "rendered_words": rendered_words,
                     "gap_pct": gap_pct,
                 })
-
-            context.close()
-            browser.close()
 
     except Exception as exc:
         findings.append(making_finding(
@@ -542,9 +535,7 @@ def run(url: str) -> list[dict]:
             severity="low",
             evidence=(
                 f"Playwright attempted to render {n} page(s) but every attempt timed out or "
-                f"failed to load even after extended retries "
-                f"(initial timeout: {PLAYWRIGHT_TIMEOUT // 1000}s, "
-                f"retry timeout: {PLAYWRIGHT_RETRY_TIMEOUT // 1000}s). "
+                f"failed to load (timeout: {PLAYWRIGHT_TIMEOUT // 1000}s). "
                 f"Affected URLs:\n{url_list}\n"
                 "This may indicate bot-detection, a WAF challenge, or extreme page latency. "
                 "Render-gap analysis was skipped for these pages."
