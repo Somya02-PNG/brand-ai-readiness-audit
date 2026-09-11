@@ -1,0 +1,109 @@
+{
+  "site": "www.allbirds.com",
+  "audited_at": "2026-09-11T06:28:26Z",
+  "summary": {
+    "total_findings": 8,
+    "critical": 0,
+    "high": 4,
+    "medium": 2,
+    "low": 2
+  },
+  "findings": [
+    {
+      "title": "Product pages detected but no Product JSON-LD found",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "URL patterns suggest this site has product pages (paths matching /product/, /shop/, /item/), but no Product schema.org JSON-LD was found on any of them.",
+      "suggested_action": {
+        "summary": "Add Product JSON-LD to all product pages with at minimum: name, description, offers (price, priceCurrency, availability), image, brand.",
+        "priority": "high"
+      },
+      "id": "F-001"
+    },
+    {
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Checked 15 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. Include <lastmod> dates in your sitemap.xml.",
+        "priority": "high"
+      },
+      "id": "F-002"
+    },
+    {
+      "title": "No sameAs links in any JSON-LD block",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Crawled 12 pages including homepage and /about. 0 pages contain a 'sameAs' property in any JSON-LD entity. Without sameAs, AI knowledge graphs cannot confidently link this site to its verified external identity on Wikidata, LinkedIn, or Crunchbase.",
+      "suggested_action": {
+        "summary": "Add a 'sameAs' array to your Organization JSON-LD on the homepage. Minimum recommended links: LinkedIn company page, Crunchbase profile. For highest-trust disambiguation: create a Wikidata entry and link to it. Example: \"sameAs\": [\"https://www.linkedin.com/company/...\", \"https://www.wikidata.org/wiki/Q...\"]",
+        "priority": "high"
+      },
+      "id": "F-003"
+    },
+    {
+      "title": "No Organization JSON-LD found on any crawled page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Crawled 12 pages. No JSON-LD with @type Organization, LocalBusiness, or equivalent was found. AI assistants use Organization markup as the primary entity anchor for a brand.",
+      "suggested_action": {
+        "summary": "Add Organization JSON-LD to your homepage with: name, legalName, url, description, logo, sameAs, contactPoint. Reference: https://schema.org/Organization",
+        "priority": "high"
+      },
+      "id": "F-004"
+    },
+    {
+      "title": "JSON-LD @context is not schema.org across 7 pages",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "Found JSON-LD blocks where @context is not 'https://schema.org' across 7 pages:\n- https://www.allbirds.com/products/womens-dasher-nz-blizzard-deep-navy (context: '(empty string)')\n- https://www.allbirds.com/products/mens-tree-runner-nz-medium-grey (context: '(empty string)')\n- https://www.allbirds.com/products/mens-dasher-nz-anthracite (context: '(empty string)')\n- https://www.allbirds.com/products/womens-tree-runner-nz-medium-grey (context: '(empty string)')\n- https://www.allbirds.com/products/mens-cruiser-medium-grey (context: '(empty string)')\n- https://www.allbirds.com/products/mens-runner-nz-slip-on-mushroom (context: '(empty string)')\n- https://www.allbirds.com/products/womens-cruiser-canvas-port (context: '(empty string)')\nExpected '@context': 'https://schema.org'.",
+      "suggested_action": {
+        "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks across all pages.",
+        "priority": "medium"
+      },
+      "id": "F-005"
+    },
+    {
+      "title": "Blog/article pages detected but no Article JSON-LD found",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "URL patterns suggest this site has blog or article pages, but no Article or BlogPosting JSON-LD was found. AI assistants rely on Article markup to properly attribute authored content.",
+      "suggested_action": {
+        "summary": "Add Article or BlogPosting JSON-LD to all blog posts with: headline, datePublished, dateModified, author (Person with name), image.",
+        "priority": "medium"
+      },
+      "id": "F-006"
+    },
+    {
+      "title": "render-readability-audit timed out",
+      "severity": "low",
+      "category": "discoverability",
+      "skill_source": "render-readability-audit",
+      "evidence": "Worker skill 'render-readability-audit' did not complete within the time budget. Partial results excluded.",
+      "suggested_action": {
+        "summary": "Run 'render-readability-audit' standalone to debug the timeout.",
+        "priority": "low"
+      },
+      "id": "F-007"
+    },
+    {
+      "title": "About page lacks sufficient disambiguating identity facts (score: 2/6)",
+      "severity": "low",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "About page: https://www.allbirds.com/our-story. Detected disambiguating facts: location hq, industry vertical. Missing categories: founding year, team size, customer count, geographic reach. Generic About pages increase the risk of AI entity confusion.",
+      "suggested_action": {
+        "summary": "Improve the About page to include specific facts: founding year, HQ city/country, industry vertical, team size, customer count, and geographic reach. These specifics help AI models build an accurate entity profile.",
+        "priority": "low"
+      },
+      "id": "F-008"
+    }
+  ]
+}

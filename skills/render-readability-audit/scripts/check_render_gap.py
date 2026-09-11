@@ -47,12 +47,18 @@ except ImportError:
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 MAX_RAW_CRAWL_PAGES = 15       # Pages to crawl for link discovery
-MAX_PLAYWRIGHT_PAGES = 8       # Max pages to render (time budget)
+MAX_PLAYWRIGHT_PAGES = 3       # Max pages to render (keeps worker within orchestrator time budget)
 REQUEST_TIMEOUT = 12
 CRAWL_DELAY = 0.5
 RENDER_GAP_HIGH_THRESHOLD = 30.0   # % — high severity
 RENDER_GAP_MEDIUM_THRESHOLD = 15.0 # % — medium severity
-PLAYWRIGHT_TIMEOUT = 20_000        # ms
+PLAYWRIGHT_TIMEOUT = 40_000        # ms — initial goto timeout
+PLAYWRIGHT_RETRY_TIMEOUT = 55_000  # ms — extended retry after both networkidle & load fail
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -84,11 +90,35 @@ def get_base_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def safe_get(url: str) -> Optional[requests.Response]:
-    try:
-        return requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-    except Exception:
-        return None
+# Transient network error substrings that warrant a retry (not hard failures)
+_TRANSIENT_NET_ERRORS = (
+    "ConnectionError",
+    "ConnectionReset",
+    "RemoteDisconnected",
+    "ChunkedEncodingError",
+    "ReadTimeout",
+)
+
+
+def safe_get(url: str, retries: int = 3, backoff: float = 2.0) -> Optional[requests.Response]:
+    """GET with automatic retry on transient network errors."""
+    for attempt in range(1, retries + 1):
+        try:
+            return requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        except Exception as exc:
+            err = str(exc)
+            is_transient = any(t in err for t in _TRANSIENT_NET_ERRORS)
+            if is_transient and attempt < retries:
+                wait = backoff * attempt
+                print(
+                    f"[render-readability] safe_get transient error on {url} "
+                    f"(attempt {attempt}/{retries}): {err[:80]}. Retrying in {wait}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(wait)
+                continue
+            return None
+    return None
 
 
 def extract_visible_text_bs4(html: str) -> str:
@@ -174,25 +204,85 @@ def discover_pages(start_url: str, base_url: str, max_pages: int) -> list[str]:
     return pages
 
 
+# Cookie/consent banner selectors to try dismissing before reading innerText
+_CONSENT_SELECTORS = [
+    'button:has-text("Accept All")',
+    'button:has-text("Accept all")',
+    'button:has-text("Accept")',
+    'button:has-text("I Accept")',
+    'button:has-text("Allow all")',
+    '[id*="accept" i]',
+    '[class*="cookie"] button',
+    '#onetrust-accept-btn-handler',
+    '[aria-label*="accept" i]',
+]
+
+
+def _dismiss_consent(page) -> None:
+    """Attempt to click common cookie/consent banners. Silently ignores failures."""
+    for selector in _CONSENT_SELECTORS:
+        try:
+            page.click(selector, timeout=2000)
+            print(
+                f"[render-readability] Dismissed consent banner with selector: {selector}",
+                file=sys.stderr,
+            )
+            break  # stop after first successful click
+        except Exception:
+            continue
+
+
 def render_page_playwright(url: str, pw_context, extra_wait_ms: int = 0) -> Optional[tuple[str, str]]:
     """Render a page with Playwright. Returns (final_url, inner_text) or None."""
+
+    def _try_goto(page, wait_until: str, timeout_ms: int) -> bool:
+        """Attempt page.goto and return True on success. Handles ERR_NETWORK_CHANGED by
+        waiting 3 s and retrying once, since this is a transient local-network blip."""
+        for net_attempt in range(2):  # first try + one network-error retry
+            try:
+                page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+                return True
+            except Exception as exc:
+                err = str(exc)
+                if "ERR_NETWORK_CHANGED" in err and net_attempt == 0:
+                    print(
+                        f"[render-readability] ERR_NETWORK_CHANGED on {url} "
+                        f"(wait_until={wait_until}). Waiting 3s for network to stabilise...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(3)
+                    continue  # retry same wait_until after brief pause
+                # Genuine timeout or unrecoverable error
+                raise
+        return False  # unreachable but satisfies type checker
+
+    def _read_text(page, extra_wait_ms: int) -> str:
+        """Dismiss consent banners, wait, then return document.body.innerText."""
+        _dismiss_consent(page)
+        # Wait 2 s after dismissal for any re-render triggered by consent acceptance
+        try:
+            page.wait_for_timeout(2000)
+        except Exception:
+            pass
+        if extra_wait_ms > 0:
+            try:
+                page.wait_for_timeout(extra_wait_ms)
+            except Exception:
+                pass
+        return page.evaluate("document.body.innerText") or ""
+
     page = None
     for wait_until in ("networkidle", "load"):
         try:
             page = pw_context.new_page()
-            page.goto(url, wait_until=wait_until, timeout=PLAYWRIGHT_TIMEOUT)
+            _try_goto(page, wait_until, PLAYWRIGHT_TIMEOUT)
             # Extra wait for any deferred JS rendering (max 3s)
             try:
                 page.wait_for_load_state("networkidle", timeout=3000)
             except Exception:
                 pass
-            if extra_wait_ms > 0:
-                try:
-                    page.wait_for_timeout(extra_wait_ms)
-                except Exception:
-                    pass
             final_url = page.url
-            text = page.evaluate("document.body.innerText") or ""
+            text = _read_text(page, extra_wait_ms)
             page.close()
             return (final_url, text)
         except Exception as exc:
@@ -206,8 +296,33 @@ def render_page_playwright(url: str, pw_context, extra_wait_ms: int = 0) -> Opti
             page = None
             if "networkidle" in wait_until:
                 continue   # retry with 'load'
-            return None
-    return None
+
+    # If networkidle AND load both failed, retry once with a longer timeout
+    print(
+        f"[render-readability] Both networkidle and load failed on {url} at {PLAYWRIGHT_TIMEOUT}ms. "
+        f"Increasing timeout to {PLAYWRIGHT_RETRY_TIMEOUT}ms and retrying once...",
+        file=sys.stderr,
+    )
+    try:
+        page = pw_context.new_page()
+        _try_goto(page, "load", PLAYWRIGHT_RETRY_TIMEOUT)
+        try:
+            page.wait_for_load_state("networkidle", timeout=3000)
+        except Exception:
+            pass
+        final_url = page.url
+        text = _read_text(page, extra_wait_ms)
+        page.close()
+        return (final_url, text)
+    except Exception as exc:
+        err_msg = str(exc)[:120]
+        print(f"[render-readability] retry (load, {PLAYWRIGHT_RETRY_TIMEOUT}ms) failed on {url}: {err_msg}", file=sys.stderr)
+        try:
+            if page:
+                page.close()
+        except Exception:
+            pass
+        return None
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
@@ -284,12 +399,19 @@ def run(url: str) -> list[dict]:
     # Select pages to render (prioritize homepage, then sample)
     render_targets = pages[:MAX_PLAYWRIGHT_PAGES]
     gap_results = []
+    timed_out_urls: list[str] = []     # pages that failed after all retries
+    inconclusive_urls: list[str] = []  # pages where rendered ratio < 20% of raw (SPA gating)
+
+    # Ratio threshold: if rendered_words < this fraction of raw_words, the page
+    # is likely behind a JS gate/consent wall and render data is not usable.
+    RENDER_RATIO_INCONCLUSIVE = 0.20
 
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             context = browser.new_context(
-                user_agent=HEADERS["User-Agent"],
+                user_agent=BROWSER_USER_AGENT,
+                viewport={"width": 1280, "height": 800},
                 ignore_https_errors=True,
             )
             for page_url in render_targets:
@@ -305,6 +427,8 @@ def run(url: str) -> list[dict]:
                 # Rendered fetch
                 result = render_page_playwright(page_url, context)
                 if result is None:
+                    # Hard timeout / full failure even after the 55s retry inside render_page_playwright
+                    timed_out_urls.append(page_url)
                     continue
                 final_url, rendered_text = result
 
@@ -317,7 +441,16 @@ def run(url: str) -> list[dict]:
                         raw_words = len(raw_text.split())
                 rendered_words = len(rendered_text.split())
 
-                # If rendered_words < raw_words, extraction was likely incomplete/premature
+                # Log rendered/raw ratio for every page (useful for debugging)
+                ratio = rendered_words / raw_words if raw_words > 0 else 1.0
+                print(
+                    f"[render-readability] {page_url}: rendered={rendered_words} raw={raw_words} "
+                    f"ratio={ratio:.2%}",
+                    file=sys.stderr,
+                )
+
+                # If rendered_words < raw_words, extraction was likely incomplete/premature.
+                # Attempt a 5s-wait retry to let JS fully hydrate.
                 if rendered_words < raw_words:
                     print(
                         f"[render-readability] rendered_words ({rendered_words}) < raw_words ({raw_words}) "
@@ -336,11 +469,31 @@ def run(url: str) -> list[dict]:
                         if retry_rendered_words >= rendered_words:
                             rendered_text = retry_rendered_text
                             rendered_words = retry_rendered_words
+                            ratio = rendered_words / raw_words if raw_words > 0 else 1.0
+                            print(
+                                f"[render-readability] After retry: rendered={rendered_words} "
+                                f"raw={raw_words} ratio={ratio:.2%}",
+                                file=sys.stderr,
+                            )
+
+                # After all retries: check the rendered/raw ratio.
+                # < 20% → inconclusive (likely JS-gated / consent-walled)
+                # < 100% but ≥ 20% → incomplete extraction, skip silently
+                if raw_words > 0 and (rendered_words / raw_words) < RENDER_RATIO_INCONCLUSIVE:
+                    print(
+                        f"[render-readability] Render inconclusive for {page_url}: "
+                        f"rendered {rendered_words} words = {ratio:.1%} of raw {raw_words} words "
+                        f"(< {RENDER_RATIO_INCONCLUSIVE:.0%} threshold). Marking as inconclusive.",
+                        file=sys.stderr,
+                    )
+                    inconclusive_urls.append(page_url)
+                    continue
 
                 if rendered_words < raw_words:
                     print(
                         f"[render-readability] Render extraction for {page_url} was likely incomplete "
-                        f"(rendered {rendered_words} < raw {raw_words} words); skipping render gap finding.",
+                        f"(rendered {rendered_words} < raw {raw_words} words, ratio={ratio:.1%}); "
+                        "skipping render gap finding.",
                         file=sys.stderr,
                     )
                     continue
@@ -364,6 +517,56 @@ def run(url: str) -> list[dict]:
             action="Ensure Chromium is installed: playwright install chromium",
         ))
         return findings
+
+    # ── Inconclusive pages (rendered ratio < 20% of raw) ──────────────────────
+    # Emit ONE per-site finding — never one per page.
+    if inconclusive_urls:
+        n = len(inconclusive_urls)
+        url_list = "\n".join(f"  - {u}" for u in inconclusive_urls)
+        findings.append(making_finding(
+            title=f"Render check inconclusive for {n} page{'s' if n != 1 else ''} — possible JS gate or consent wall",
+            severity="low",
+            evidence=(
+                f"After consent-banner dismissal and extended waits, {n} page(s) returned rendered text "
+                f"that was less than {int(RENDER_RATIO_INCONCLUSIVE * 100)}% of the raw-HTML word count. "
+                "This typically means content is behind a JavaScript gate, cookie-consent paywall, or "
+                "login wall that automated rendering cannot reliably pass. "
+                f"Render-gap analysis could not run for these pages:\n{url_list}"
+            ),
+            action=(
+                "Ensure primary page content is accessible without requiring JavaScript interaction, "
+                "login, or cookie acceptance. AI crawlers and search bots may not execute JS or accept "
+                "consent prompts, making this content invisible to them."
+            ),
+        ))
+        if not gap_results and not timed_out_urls:
+            return findings
+
+    # ── Timed-out pages ───────────────────────────────────────────────────────
+    if timed_out_urls:
+        n = len(timed_out_urls)
+        url_list = "\n".join(f"  - {u}" for u in timed_out_urls)
+        findings.append(making_finding(
+            title=f"Render check blocked/unreachable for {n} page{'s' if n != 1 else ''}",
+            severity="low",
+            evidence=(
+                f"Playwright attempted to render {n} page(s) but every attempt timed out or "
+                f"failed to load even after extended retries "
+                f"(initial timeout: {PLAYWRIGHT_TIMEOUT // 1000}s, "
+                f"retry timeout: {PLAYWRIGHT_RETRY_TIMEOUT // 1000}s). "
+                f"Affected URLs:\n{url_list}\n"
+                "This may indicate bot-detection, a WAF challenge, or extreme page latency. "
+                "Render-gap analysis was skipped for these pages."
+            ),
+            action=(
+                "Verify the affected pages load in a standard browser. "
+                "If bot management (e.g. Cloudflare, Akamai) is active, ensure legitimate "
+                "AI crawler user-agents are not blocked or challenged."
+            ),
+        ))
+        # If ALL pages timed out, no gap data at all — return early.
+        if not gap_results:
+            return findings
 
     # Evaluate render gaps
     gap_pages = [r for r in gap_results if r["gap_pct"] >= RENDER_GAP_MEDIUM_THRESHOLD]

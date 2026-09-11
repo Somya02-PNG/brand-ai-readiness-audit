@@ -171,7 +171,7 @@ def run(url: str) -> dict:
 
     # Wait for all workers to complete
     for t in threads:
-        t.join(timeout=270)  # 4.5 min per worker max; overall < 5 min target
+        t.join(timeout=480)  # 8 min per worker; render worker needs ~405s worst-case (3 pages × 135s at 40s timeouts)
 
     # Collect all findings
     all_findings = []
