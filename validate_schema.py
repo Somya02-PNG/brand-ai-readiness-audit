@@ -1,6 +1,12 @@
+import sys
 import json
 
-with open('audit_example_com.json', encoding='utf-8') as f:
+if len(sys.argv) < 2:
+    print("Usage: python validate_schema.py <report_file.json>", file=sys.stderr)
+    sys.exit(1)
+
+filename = sys.argv[1]
+with open(filename, encoding='utf-8') as f:
     r = json.load(f)
 
 # Schema validation

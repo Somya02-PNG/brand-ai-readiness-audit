@@ -15,6 +15,7 @@ Returns JSON list of findings to stdout.
 import sys
 import json
 import time
+import re
 import urllib.robotparser
 from urllib.parse import urlparse, urljoin
 from collections import deque
@@ -62,8 +63,9 @@ AI_CRAWLERS = [
     ("Googlebot", "Google Search (baseline)"),
 ]
 
-# Key paths to check for disallow rules
-KEY_PATHS = ["/", "/products", "/blog", "/pricing", "/about", "/faq", "/shop"]
+# Static fallback paths to check for disallow rules if dynamic discovery fails
+STATIC_KEY_PATHS = ["/", "/products", "/blog", "/pricing", "/about", "/faq", "/shop"]
+KEY_PATHS = STATIC_KEY_PATHS
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,6 +132,99 @@ def extract_internal_links(html: str, base_url: str, current_url: str) -> list[s
     return links
 
 
+def extract_paths_from_sitemap(sitemap_url: str, base_url: str) -> list[str]:
+    """Extract paths from an XML sitemap or sitemap index."""
+    try:
+        resp = safe_get(sitemap_url)
+        if not resp or resp.status_code != 200:
+            return []
+
+        locs = re.findall(r"<loc>\s*(https?://[^<\s]+)\s*</loc>", resp.text, re.IGNORECASE)
+        # If this is a sitemap index (locs point to .xml files), follow the first child sitemap
+        xml_locs = [l for l in locs if ".xml" in l.lower()]
+        if xml_locs and ("<sitemapindex" in resp.text.lower() or len(xml_locs) == len(locs)):
+            time.sleep(CRAWL_DELAY)
+            sub_resp = safe_get(xml_locs[0])
+            if sub_resp and sub_resp.status_code == 200:
+                locs = re.findall(r"<loc>\s*(https?://[^<\s]+)\s*</loc>", sub_resp.text, re.IGNORECASE)
+
+        base_netloc = urlparse(base_url).netloc
+        paths = set()
+        for loc in locs:
+            parsed = urlparse(loc)
+            if not parsed.netloc or parsed.netloc == base_netloc:
+                p = parsed.path.rstrip("/")
+                if p:
+                    paths.add(p)
+                if len(paths) >= 15:
+                    break
+
+        if paths:
+            paths.add("/")
+            return sorted(list(paths))
+    except Exception:
+        pass
+    return []
+
+
+def extract_paths_from_homepage(base_url: str) -> list[str]:
+    """Extract internal paths from links found on the homepage."""
+    try:
+        resp = safe_get(base_url)
+        if resp and resp.status_code == 200:
+            links = extract_internal_links(resp.text, base_url, base_url)
+            paths = set()
+            for link in links:
+                p = urlparse(link).path.rstrip("/")
+                if p:
+                    paths.add(p)
+                if len(paths) >= 15:
+                    break
+            if paths:
+                paths.add("/")
+                return sorted(list(paths))
+    except Exception:
+        pass
+    return []
+
+
+def discover_key_paths(base_url: str, robots_text: Optional[str] = None) -> list[str]:
+    """
+    Dynamically discover representative paths for robots.txt testing:
+    1. First try sitemap.xml
+    2. Fall back to links found on homepage
+    3. Last-resort fallback to static list
+    """
+    # 1. First try sitemap.xml
+    sitemap_url = None
+    if robots_text:
+        for line in robots_text.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("sitemap:"):
+                sitemap_url = stripped.split(":", 1)[1].strip()
+                break
+
+    if not sitemap_url:
+        for candidate in ["/sitemap.xml", "/sitemap_index.xml", "/sitemap/sitemap.xml"]:
+            resp = safe_get(base_url + candidate)
+            if resp and resp.status_code == 200:
+                sitemap_url = base_url + candidate
+                break
+
+    if sitemap_url:
+        sitemap_paths = extract_paths_from_sitemap(sitemap_url, base_url)
+        if len(sitemap_paths) > 1:
+            return sitemap_paths
+
+    # 2. Fall back to links on the homepage
+    homepage_paths = extract_paths_from_homepage(base_url)
+    if len(homepage_paths) > 1:
+        return homepage_paths
+
+    # 3. Last-resort fallback
+    return STATIC_KEY_PATHS
+
+
 def making_finding(title, severity, evidence, action, priority=None):
     return {
         "title": title,
@@ -171,11 +266,13 @@ def audit_robots(base_url: str) -> tuple[list[dict], Optional[urllib.robotparser
     rp.set_url(robots_url)
     rp.parse(resp.text.splitlines())
 
+    key_paths = discover_key_paths(base_url, robots_text=resp.text if resp else None)
+
     # Check AI crawler blocks
     blocked = []
     for agent, description in AI_CRAWLERS:
         blocked_paths = []
-        for path in KEY_PATHS:
+        for path in key_paths:
             test_url = base_url + path
             if not rp.can_fetch(agent, test_url):
                 blocked_paths.append(path)

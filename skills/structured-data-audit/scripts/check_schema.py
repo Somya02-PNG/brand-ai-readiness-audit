@@ -342,22 +342,15 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
     return findings
 
 
-def check_context(entity: dict, page_url: str) -> list[dict]:
+def check_context(entity: dict, page_url: str) -> Optional[dict]:
     context = entity.get("@context", "")
     if isinstance(context, str):
         if "schema.org" not in context:
-            return [{
-                "title": f"JSON-LD @context is not schema.org on {urlparse(page_url).path or '/'}",
-                "severity": "medium",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": f"Page: {page_url}. @context value: '{context}'. Expected 'https://schema.org'.",
-                "suggested_action": {
-                    "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks.",
-                    "priority": "medium",
-                },
-            }]
-    return []
+            return {"url": page_url, "context": context}
+    elif isinstance(context, list):
+        if not any("schema.org" in str(c) for c in context):
+            return {"url": page_url, "context": str(context)}
+    return None
 
 # ── Main audit logic ───────────────────────────────────────────────────────────
 
@@ -385,6 +378,8 @@ def run(url: str) -> list[dict]:
     pages_with_jsonld = 0
     pages_without_jsonld = []
     page_type_coverage: dict[str, int] = {}
+    context_issues = []
+    seen_context_urls = set()
 
     for page_url in pages:
         time.sleep(CRAWL_DELAY)
@@ -422,7 +417,10 @@ def run(url: str) -> list[dict]:
             pages_with_jsonld += 1
             for block in valid_blocks:
                 # Context check (top-level only)
-                findings.extend(check_context(block["data"], page_url))
+                ctx_issue = check_context(block["data"], page_url)
+                if ctx_issue and page_url not in seen_context_urls:
+                    seen_context_urls.add(page_url)
+                    context_issues.append(ctx_issue)
 
                 entities = flatten_graph(block["data"])
                 for entity in entities:
@@ -433,6 +431,42 @@ def run(url: str) -> list[dict]:
                         findings.extend(check_entity_props(entity, t, page_url))
         else:
             pages_without_jsonld.append(urlparse(page_url).path or "/")
+
+    # Consolidate context findings if repeated across multiple pages
+    if len(context_issues) > 1:
+        evidence_lines = [
+            f"Found JSON-LD blocks where @context is not 'https://schema.org' across {len(context_issues)} pages:"
+        ]
+        for item in context_issues:
+            ctx_val = item["context"] or "(empty string)"
+            evidence_lines.append(f"- {item['url']} (context: '{ctx_val}')")
+        evidence_lines.append("Expected '@context': 'https://schema.org'.")
+
+        findings.append({
+            "title": f"JSON-LD @context is not schema.org across {len(context_issues)} pages",
+            "severity": "medium",
+            "category": "discoverability",
+            "skill_source": "structured-data-audit",
+            "evidence": "\n".join(evidence_lines),
+            "suggested_action": {
+                "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks across all pages.",
+                "priority": "medium",
+            },
+        })
+    elif len(context_issues) == 1:
+        item = context_issues[0]
+        ctx_val = item["context"] or "(empty string)"
+        findings.append({
+            "title": f"JSON-LD @context is not schema.org on {urlparse(item['url']).path or '/'}",
+            "severity": "medium",
+            "category": "discoverability",
+            "skill_source": "structured-data-audit",
+            "evidence": f"Page: {item['url']}. @context value: '{ctx_val}'. Expected 'https://schema.org'.",
+            "suggested_action": {
+                "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks.",
+                "priority": "medium",
+            },
+        })
 
     total_pages = len(pages)
     no_markup_pct = len(pages_without_jsonld) / total_pages * 100 if total_pages else 0

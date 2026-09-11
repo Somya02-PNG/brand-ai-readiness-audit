@@ -174,7 +174,7 @@ def discover_pages(start_url: str, base_url: str, max_pages: int) -> list[str]:
     return pages
 
 
-def render_page_playwright(url: str, pw_context) -> Optional[tuple[str, str]]:
+def render_page_playwright(url: str, pw_context, extra_wait_ms: int = 0) -> Optional[tuple[str, str]]:
     """Render a page with Playwright. Returns (final_url, inner_text) or None."""
     page = None
     for wait_until in ("networkidle", "load"):
@@ -186,6 +186,11 @@ def render_page_playwright(url: str, pw_context) -> Optional[tuple[str, str]]:
                 page.wait_for_load_state("networkidle", timeout=3000)
             except Exception:
                 pass
+            if extra_wait_ms > 0:
+                try:
+                    page.wait_for_timeout(extra_wait_ms)
+                except Exception:
+                    pass
             final_url = page.url
             text = page.evaluate("document.body.innerText") or ""
             page.close()
@@ -312,6 +317,34 @@ def run(url: str) -> list[dict]:
                         raw_words = len(raw_text.split())
                 rendered_words = len(rendered_text.split())
 
+                # If rendered_words < raw_words, extraction was likely incomplete/premature
+                if rendered_words < raw_words:
+                    print(
+                        f"[render-readability] rendered_words ({rendered_words}) < raw_words ({raw_words}) "
+                        f"on {page_url}. Retrying with 5000ms wait...",
+                        file=sys.stderr,
+                    )
+                    retry_result = render_page_playwright(page_url, context, extra_wait_ms=5000)
+                    if retry_result is not None:
+                        retry_final_url, retry_rendered_text = retry_result
+                        retry_rendered_words = len(retry_rendered_text.split())
+                        if retry_final_url.rstrip("/") != page_url.rstrip("/"):
+                            raw_resp2 = safe_get(retry_final_url)
+                            if raw_resp2 and raw_resp2.status_code == 200:
+                                raw_text = extract_visible_text_bs4(raw_resp2.text)
+                                raw_words = len(raw_text.split())
+                        if retry_rendered_words >= rendered_words:
+                            rendered_text = retry_rendered_text
+                            rendered_words = retry_rendered_words
+
+                if rendered_words < raw_words:
+                    print(
+                        f"[render-readability] Render extraction for {page_url} was likely incomplete "
+                        f"(rendered {rendered_words} < raw {raw_words} words); skipping render gap finding.",
+                        file=sys.stderr,
+                    )
+                    continue
+
                 gap_pct = compute_render_gap(raw_text, rendered_text)
                 gap_results.append({
                     "url": page_url,
@@ -319,38 +352,6 @@ def run(url: str) -> list[dict]:
                     "rendered_words": rendered_words,
                     "gap_pct": gap_pct,
                 })
-
-                # Per-page finding
-                if gap_pct >= RENDER_GAP_HIGH_THRESHOLD:
-                    findings.append(making_finding(
-                        title=f"{gap_pct}% of content on {urlparse(page_url).path or '/'} absent from raw HTML",
-                        severity="high",
-                        evidence=(
-                            f"Raw HTML: {raw_words} words. "
-                            f"Playwright-rendered: {rendered_words} words. "
-                            f"Render gap: {gap_pct}% of rendered words absent from raw crawler view. "
-                            f"Affected URL: {page_url}"
-                        ),
-                        action=(
-                            "Implement SSR or SSG so content is in the initial HTML response. "
-                            "At minimum, ensure product names, prices, and key facts appear in raw HTML. "
-                            "Use Next.js getServerSideProps/getStaticProps or equivalent."
-                        ),
-                    ))
-                elif gap_pct >= RENDER_GAP_MEDIUM_THRESHOLD:
-                    findings.append(making_finding(
-                        title=f"{gap_pct}% of content on {urlparse(page_url).path or '/'} requires JS to render",
-                        severity="medium",
-                        evidence=(
-                            f"Raw HTML: {raw_words} words. "
-                            f"Playwright-rendered: {rendered_words} words. "
-                            f"Render gap: {gap_pct}%. Affected URL: {page_url}"
-                        ),
-                        action=(
-                            "Review client-side-only components. Move key informational content "
-                            "to server-rendered or static HTML."
-                        ),
-                    ))
 
             context.close()
             browser.close()
@@ -364,8 +365,69 @@ def run(url: str) -> list[dict]:
         ))
         return findings
 
-    # Summary finding if average gap is high
-    if gap_results:
+    # Evaluate render gaps
+    gap_pages = [r for r in gap_results if r["gap_pct"] >= RENDER_GAP_MEDIUM_THRESHOLD]
+
+    if len(gap_pages) > 2:
+        avg_gap = round(sum(r["gap_pct"] for r in gap_pages) / len(gap_pages), 1)
+        any_high = any(r["gap_pct"] >= RENDER_GAP_HIGH_THRESHOLD for r in gap_pages)
+        sev = "critical" if avg_gap >= RENDER_GAP_HIGH_THRESHOLD else ("high" if any_high else "medium")
+        evidence_lines = [
+            f"{len(gap_pages)} pages show significant content missing from the raw HTML response that requires JavaScript execution to render:"
+        ]
+        for r in gap_pages:
+            evidence_lines.append(
+                f"- {r['url']}: {r['gap_pct']}% gap (raw: {r['raw_words']} words, rendered: {r['rendered_words']} words)"
+            )
+        findings.append(making_finding(
+            title=f"{len(gap_pages)} pages show significant JS-render gaps (avg {avg_gap}%)",
+            severity=sev,
+            evidence="\n".join(evidence_lines),
+            action=(
+                "Implement Server-Side Rendering (SSR) or Static Site Generation (SSG) so content is present "
+                "in the initial HTML response across these pages. At minimum, ensure product names, descriptions, "
+                "pricing, and primary navigation appear in raw HTML."
+            ),
+        ))
+    else:
+        for r in gap_pages:
+            page_url = r["url"]
+            gap_pct = r["gap_pct"]
+            raw_words = r["raw_words"]
+            rendered_words = r["rendered_words"]
+            if gap_pct >= RENDER_GAP_HIGH_THRESHOLD:
+                findings.append(making_finding(
+                    title=f"{gap_pct}% of content on {urlparse(page_url).path or '/'} absent from raw HTML",
+                    severity="high",
+                    evidence=(
+                        f"Raw HTML: {raw_words} words. "
+                        f"Playwright-rendered: {rendered_words} words. "
+                        f"Render gap: {gap_pct}% of rendered words absent from raw crawler view. "
+                        f"Affected URL: {page_url}"
+                    ),
+                    action=(
+                        "Implement SSR or SSG so content is in the initial HTML response. "
+                        "At minimum, ensure product names, prices, and key facts appear in raw HTML. "
+                        "Use Next.js getServerSideProps/getStaticProps or equivalent."
+                    ),
+                ))
+            else:
+                findings.append(making_finding(
+                    title=f"{gap_pct}% of content on {urlparse(page_url).path or '/'} requires JS to render",
+                    severity="medium",
+                    evidence=(
+                        f"Raw HTML: {raw_words} words. "
+                        f"Playwright-rendered: {rendered_words} words. "
+                        f"Render gap: {gap_pct}%. Affected URL: {page_url}"
+                    ),
+                    action=(
+                        "Review client-side-only components. Move key informational content "
+                        "to server-rendered or static HTML."
+                    ),
+                ))
+
+    # Summary finding if site-wide average gap is high (when not already consolidated)
+    if len(gap_pages) <= 2 and gap_results:
         avg_gap = round(sum(r["gap_pct"] for r in gap_results) / len(gap_results), 1)
         pages_above_threshold = sum(1 for r in gap_results if r["gap_pct"] >= RENDER_GAP_HIGH_THRESHOLD)
         if avg_gap >= RENDER_GAP_HIGH_THRESHOLD and pages_above_threshold > 1:
