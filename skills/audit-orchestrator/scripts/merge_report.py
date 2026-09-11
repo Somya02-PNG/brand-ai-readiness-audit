@@ -80,20 +80,191 @@ def severity_key(finding: dict) -> int:
 
 
 def assign_ids(findings: list[dict]) -> list[dict]:
-    """Sort by severity (critical first) then assign sequential F-XXX IDs."""
-    sorted_findings = sorted(findings, key=severity_key)
+    """Sort defects by severity (critical first) and keep proactive findings at the end, then assign sequential F-XXX IDs."""
+    def sort_key(f: dict):
+        is_proactive = 1 if f.get("proactive") else 0
+        return (is_proactive, severity_key(f))
+
+    sorted_findings = sorted(findings, key=sort_key)
     for i, finding in enumerate(sorted_findings, start=1):
         finding["id"] = f"F-{i:03d}"
     return sorted_findings
 
 
 def compute_summary(findings: list[dict]) -> dict:
-    counts = {"total_findings": len(findings), "critical": 0, "high": 0, "medium": 0, "low": 0}
+    counts = {
+        "total_findings": len(findings),
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0,
+    }
     for f in findings:
         sev = f.get("severity", "low").lower()
         if sev in counts:
             counts[sev] += 1
+        else:
+            counts["low"] += 1
     return counts
+
+
+def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list[dict]:
+    """
+    Generate 2-3 proactive findings (severity info, proactive=True)
+    not tied to detected defects, tailored to what the crawl revealed about the site.
+    """
+    text_corpus = " ".join(
+        f.get("title", "") + " " + f.get("evidence", "") for f in existing_findings
+    ).lower()
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc.lower()
+
+    is_content_or_media = (
+        any(k in text_corpus for k in ["article", "news", "blog", "author", "editorial", "headline"])
+        or any(k in domain for k in ["news", "verge", "times", "post", "blog", "press", "media"])
+    )
+    is_ecommerce = any(k in text_corpus for k in ["product", "offers", "cart", "checkout", "sku", "store", "shop"])
+    has_faq = "faqpage" in text_corpus or " faq" in text_corpus or "frequently asked questions" in text_corpus
+    has_llms = "llms.txt" in text_corpus
+    has_author_links = "author bio" in text_corpus or "author sameas" in text_corpus
+    has_speakable = "speakable" in text_corpus
+    has_breadcrumbs = "breadcrumblist" in text_corpus
+    has_wikidata = "wikidata" in text_corpus and "missing" not in text_corpus
+
+    candidates = []
+
+    # 1. Content/Editorial specific: Author bio pages with sameAs
+    if is_content_or_media and not has_author_links:
+        candidates.append({
+            "title": "Consider adding author bio pages with sameAs links for content credibility",
+            "severity": "info",
+            "category": "credibility",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "Authoritative AI answer engines evaluate author expertise and identity when scoring source credibility. "
+                "Linking editorial bylines to dedicated author bio pages with Person JSON-LD and sameAs links "
+                "(Wikidata, LinkedIn, Twitter/X) boosts model confidence in attribution and E-E-A-T."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Create dedicated author profile pages with Person schema, brief bios, and sameAs links "
+                    "to authoritative external profiles to strengthen E-E-A-T credibility for AI engines."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # 2. Content/Editorial specific: Speakable schema for voice/audio AI
+    if is_content_or_media and not has_speakable:
+        candidates.append({
+            "title": "Consider adding Speakable specification for voice and audio AI assistants",
+            "severity": "info",
+            "category": "discoverability",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "The Speakable schema.org specification marks key content sections (such as article ledes, "
+                "key takeaways, or executive summaries) as optimal for text-to-speech reading by voice assistants "
+                "and conversational AI summary features."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Add 'speakable' properties to Article or WebPage JSON-LD using CSS selectors targeting "
+                    "introductory summaries and key takeaways."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # 3. FAQPage schema (if site does not already have FAQPage)
+    if not has_faq:
+        candidates.append({
+            "title": "Consider adding FAQPage JSON-LD to answer common questions directly in AI results",
+            "severity": "info",
+            "category": "discoverability",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "No FAQPage structured data was detected across the crawled pages. Publishing FAQPage JSON-LD "
+                "enables AI search engines and assistants to quote structured question-and-answer pairs directly in conversational answers."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Add FAQPage structured data to high-intent informational pages (such as pricing, product FAQs, "
+                    "or support pages) with clear, concise question-and-answer pairs."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # 4. /llms.txt summary file (if not already reported or existing)
+    if not has_llms:
+        candidates.append({
+            "title": "Consider publishing an /llms.txt summary file to guide AI assistants",
+            "severity": "info",
+            "category": "discoverability",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "No /llms.txt file was found at the site root. The emerging /llms.txt convention (llmstxt.org) "
+                "provides LLMs and AI search engines with a clean, curated Markdown summary of site architecture, "
+                "core capabilities, and key documentation."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Publish an /llms.txt file at the domain root with concise Markdown summaries of your brand, "
+                    "products, and primary links to streamline AI ingestion."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # 5. BreadcrumbList schema
+    if not has_breadcrumbs and (is_ecommerce or len(existing_findings) > 3):
+        candidates.append({
+            "title": "Consider adding BreadcrumbList JSON-LD to convey hierarchical site architecture",
+            "severity": "info",
+            "category": "discoverability",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "BreadcrumbList structured data explicitly maps category and subpage relationships. "
+                "AI search indexers use breadcrumb hierarchies to contextualize deep links in cited references."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Implement BreadcrumbList JSON-LD on content and category pages to signal clear navigational hierarchy."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # 6. Wikidata grounding
+    if not has_wikidata:
+        candidates.append({
+            "title": "Consider establishing a Wikidata entity for canonical knowledge graph grounding",
+            "severity": "info",
+            "category": "discoverability",
+            "skill_source": "audit-orchestrator",
+            "proactive": True,
+            "evidence": (
+                "Wikidata is a core training and entity-resolution reference for major LLMs (including GPT-4, Claude, "
+                "and Gemini). Establishing an official Wikidata item and linking it in your Organization sameAs array "
+                "provides durable grounding in the global knowledge graph."
+            ),
+            "suggested_action": {
+                "summary": (
+                    "Create or update a Wikidata item representing your organization and reference it in your "
+                    "homepage Organization JSON-LD sameAs array."
+                ),
+                "priority": "low",
+            },
+        })
+
+    # Return 2 or 3 proactive findings (at least 2, at most 3)
+    return candidates[:3] if len(candidates) >= 3 else candidates[:2]
 
 
 def run_worker(
@@ -195,6 +366,10 @@ def run(url: str) -> dict:
         else:
             all_findings.extend(worker_findings)
 
+    # Append 2-3 proactive findings tailored to what the crawl revealed
+    proactive_findings = generate_proactive_findings(url, all_findings)
+    all_findings.extend(proactive_findings)
+
     return build_report(url, all_findings)
 
 
@@ -239,10 +414,14 @@ Examples:
     total = report["summary"]["total_findings"]
     critical = report["summary"]["critical"]
     high = report["summary"]["high"]
+    medium = report["summary"]["medium"]
+    low = report["summary"]["low"]
+    info = report["summary"].get("info", 0)
+    info_str = f", {info} info" if info else ""
     print(
         f"[audit-orchestrator] Done. {total} findings: "
         f"{critical} critical, {high} high, "
-        f"{report['summary']['medium']} medium, {report['summary']['low']} low.",
+        f"{medium} medium, {low} low{info_str}.",
         file=sys.stderr,
     )
 

@@ -7,7 +7,8 @@ description: >
   and LocalBusiness types. Flags missing markup, malformed JSON, and
   incomplete required fields that reduce AI citation quality.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

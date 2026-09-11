@@ -6,7 +6,8 @@ description: >
   for diagnosing why a brand is missing or misrepresented in AI assistants,
   or why visitors who arrive don't engage.
 license: MIT
-entrypoint: true
+metadata:
+  entrypoint: "true"
 ---
 
 ## When to use

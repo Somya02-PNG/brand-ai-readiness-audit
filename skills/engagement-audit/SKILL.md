@@ -7,7 +7,8 @@ description: >
   elements such as breadcrumbs and site search. These issues cause visitors
   to bounce before converting, defeating the purpose of AI-driven traffic.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

@@ -6,7 +6,8 @@ description: >
   Google-Extended, and other AI user-agents), HTTP status codes, redirect
   chain lengths, and sitemap.xml presence / reachability.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

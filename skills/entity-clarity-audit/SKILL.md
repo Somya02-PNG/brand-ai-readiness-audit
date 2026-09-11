@@ -7,7 +7,8 @@ description: >
   legal/brand name declarations, About page identity statements, and unique
   identifiers such as LinkedIn, Wikidata, Crunchbase, and GitHub.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

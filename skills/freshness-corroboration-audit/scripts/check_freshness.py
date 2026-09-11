@@ -17,9 +17,10 @@ import json
 import re
 import time
 from datetime import datetime, timezone, timedelta
+import urllib.robotparser
 from urllib.parse import urlparse, urljoin
 from collections import deque, defaultdict
-from typing import Optional
+from typing import Optional, Any
 
 try:
     import requests
@@ -42,6 +43,9 @@ except ImportError as e:
 
 MAX_PAGES = 15
 REQUEST_TIMEOUT = 12
+REQUEST_TIMEOUT_EXTERNAL = 8
+ROBOTS_TIMEOUT = 4
+MAX_EXTERNAL_SAMEAS_FETCHES = 2
 CRAWL_DELAY = 0.5
 STALE_THRESHOLD_DAYS = 365  # Content older than this is considered stale
 
@@ -106,9 +110,9 @@ def get_base_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def safe_get(url: str) -> Optional[requests.Response]:
+def safe_get(url: str, timeout: int = REQUEST_TIMEOUT) -> Optional[requests.Response]:
     try:
-        return requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        return requests.get(url, headers=HEADERS, timeout=timeout)
     except Exception:
         return None
 
@@ -319,6 +323,335 @@ def make_finding(title, severity, evidence, action):
         },
     }
 
+# ── sameAs profile corroboration helpers ──────────────────────────────────────
+
+def flatten_jsonld(data: Any) -> list[dict]:
+    """Flatten @graph and arrays into individual entities."""
+    entities = []
+    if isinstance(data, list):
+        for item in data:
+            entities.extend(flatten_jsonld(item))
+    elif isinstance(data, dict):
+        if "@graph" in data and isinstance(data["@graph"], list):
+            for item in data["@graph"]:
+                if isinstance(item, dict):
+                    entities.append(item)
+        else:
+            entities.append(data)
+    return entities
+
+
+def extract_org_data_from_page(html: str) -> tuple[set[str], set[str], set[str], Optional[str]]:
+    """Extract sameAs URLs, names, addresses, and founding date from Organization JSON-LD."""
+    soup = BeautifulSoup(html, "lxml")
+    same_as_urls = set()
+    names = set()
+    addresses = set()
+    founding = None
+
+    for script in soup.find_all("script", {"type": "application/ld+json"}):
+        raw = script.string or ""
+        try:
+            data = json.loads(raw)
+            for entity in flatten_jsonld(data):
+                t = entity.get("@type", "")
+                types = [t] if isinstance(t, str) else (t if isinstance(t, list) else [])
+                is_org = any(t in ("Organization", "LocalBusiness", "Corporation",
+                                   "NGO", "GovernmentOrganization", "EducationalOrganization",
+                                   "Brand", "NewsMediaOrganization") for t in types)
+                if is_org:
+                    s_as = entity.get("sameAs", [])
+                    if isinstance(s_as, str) and s_as.strip().startswith(("http://", "https://")):
+                        same_as_urls.add(s_as.strip())
+                    elif isinstance(s_as, list):
+                        for s in s_as:
+                            if isinstance(s, str) and s.strip().startswith(("http://", "https://")):
+                                same_as_urls.add(s.strip())
+
+                    if entity.get("name"):
+                        names.add(str(entity["name"]).strip())
+                    if entity.get("legalName"):
+                        names.add(str(entity["legalName"]).strip())
+                    if entity.get("alternateName"):
+                        alt = entity["alternateName"]
+                        if isinstance(alt, list):
+                            for a in alt:
+                                if isinstance(a, str):
+                                    names.add(a.strip())
+                        elif isinstance(alt, str):
+                            names.add(alt.strip())
+
+                    if entity.get("address"):
+                        addr = entity["address"]
+                        if isinstance(addr, dict):
+                            parts = [
+                                addr.get("streetAddress", ""),
+                                addr.get("addressLocality", ""),
+                                addr.get("addressRegion", ""),
+                                addr.get("postalCode", ""),
+                                addr.get("addressCountry", ""),
+                            ]
+                            full = " ".join(p for p in parts if p).strip()
+                            if full:
+                                addresses.add(full)
+                        elif isinstance(addr, str) and addr.strip():
+                            addresses.add(addr.strip())
+
+                    if entity.get("foundingDate") and not founding:
+                        founding = str(entity["foundingDate"]).strip()
+        except json.JSONDecodeError:
+            pass
+
+    return same_as_urls, names, addresses, founding
+
+
+def extract_fallback_site_names(html: str, url: str) -> set[str]:
+    """Fallback site brand names from og:site_name, <title>, or domain."""
+    names = set()
+    soup = BeautifulSoup(html, "lxml")
+    og_site = soup.find("meta", {"property": "og:site_name"})
+    if og_site and og_site.get("content"):
+        names.add(og_site["content"].strip())
+    if soup.title and soup.title.string:
+        clean_t = re.sub(r"\s*[-–|•·].*$", "", soup.title.string).strip()
+        if clean_t:
+            names.add(clean_t)
+    parsed = urlparse(url)
+    dom_part = parsed.netloc.lower().replace("www.", "").split(".")[0]
+    if dom_part:
+        names.add(dom_part)
+    return names
+
+
+def prioritize_sameas_urls(urls: list[str]) -> list[str]:
+    """Prioritize informative authority profile platforms."""
+    def score_url(u: str) -> int:
+        u_lower = u.lower()
+        if "wikipedia.org" in u_lower:
+            return 0
+        if "wikidata.org" in u_lower:
+            return 1
+        if "crunchbase.com" in u_lower:
+            return 2
+        if "linkedin.com" in u_lower:
+            return 3
+        if "github.com" in u_lower:
+            return 4
+        return 5
+    return sorted(urls, key=score_url)
+
+
+def is_allowed_by_robots(url: str, user_agent: str = "BrandAuditBot") -> bool:
+    """Respect robots.txt via read-only GET before accessing external sameAs URL."""
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        resp = safe_get(robots_url, timeout=ROBOTS_TIMEOUT)
+        if resp is None:
+            return True
+        if resp.status_code in (401, 403):
+            return False
+        if resp.status_code == 200:
+            rp = urllib.robotparser.RobotFileParser()
+            rp.set_url(robots_url)
+            rp.parse(resp.text.splitlines())
+            return rp.can_fetch(user_agent, url) and rp.can_fetch("*", url)
+        return True
+    except Exception:
+        return True
+
+
+def clean_external_title(title: str) -> str:
+    """Strip platform-specific suffixes like ' - Wikipedia' or ' | LinkedIn'."""
+    title = re.sub(
+        r"\s*[-–|•·/]\s*(Wikipedia|LinkedIn|Crunchbase|Twitter|X|Facebook|Instagram|GitHub|YouTube|Bloomberg|PitchBook).*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    title = re.sub(r"\s*\(?@[A-Za-z0-9_]+\)?\s*$", "", title)
+    title = re.sub(r"\s*\(Q\d+\)\s*$", "", title)
+    return title.strip()
+
+
+def normalize_name_for_comparison(name: str) -> str:
+    name = name.lower().strip()
+    name = re.sub(r"\b(the|inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|sa|plc|ag)\b", "", name)
+    name = re.sub(r"[^a-z0-9]", "", name)
+    return name
+
+
+def is_materially_different_name(site_names: set[str], ext_name: Optional[str]) -> bool:
+    if not ext_name or not site_names:
+        return False
+    norm_ext = normalize_name_for_comparison(ext_name)
+    if len(norm_ext) < 3:
+        return False
+    for s_name in site_names:
+        norm_s = normalize_name_for_comparison(s_name)
+        if not norm_s:
+            continue
+        if norm_s == norm_ext or norm_s in norm_ext or norm_ext in norm_s:
+            return False
+    return True
+
+
+def is_materially_different_address(site_addresses: set[str], ext_address: Optional[str]) -> bool:
+    if not ext_address or not site_addresses:
+        return False
+
+    def clean_addr(a: str) -> str:
+        a = a.lower()
+        a = re.sub(r"[,\.\-#/]", " ", a)
+        a = re.sub(r"\b(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|suite|ste|floor|fl|u\.?s\.?|usa)\b", "", a)
+        return " ".join(a.split())
+
+    ext_clean = clean_addr(ext_address)
+    ext_tokens = set(t for t in ext_clean.split() if len(t) > 2)
+    if not ext_tokens:
+        return False
+
+    for s_addr in site_addresses:
+        s_clean = clean_addr(s_addr)
+        s_tokens = set(t for t in s_clean.split() if len(t) > 2)
+        common = ext_tokens.intersection(s_tokens)
+        if len(common) >= 2 or (len(common) >= 1 and any(len(t) > 5 for t in common)):
+            return False
+        if s_clean in ext_clean or ext_clean in s_clean:
+            return False
+
+    return True
+
+
+def is_materially_different_founding(site_founding: Optional[str], ext_founding: Optional[str]) -> bool:
+    if not site_founding or not ext_founding:
+        return False
+    site_years = re.findall(r"\b(18\d\d|19\d\d|20\d\d)\b", str(site_founding))
+    ext_years = re.findall(r"\b(18\d\d|19\d\d|20\d\d)\b", str(ext_founding))
+    if site_years and ext_years:
+        return bool(set(site_years).isdisjoint(set(ext_years)))
+    return False
+
+
+def check_sameas_corroboration(
+    all_same_as: set[str],
+    site_names: set[str],
+    site_addresses: set[str],
+    site_founding: Optional[str],
+) -> list[dict]:
+    findings = []
+    # Cap to at most 2 external fetches per audit to respect runtime budget and avoid rate abuse
+    target_urls = prioritize_sameas_urls(list(all_same_as))[:MAX_EXTERNAL_SAMEAS_FETCHES]
+
+    for target_url in target_urls:
+        # Respect robots.txt via read-only GET
+        if not is_allowed_by_robots(target_url):
+            continue
+
+        resp = safe_get(target_url, timeout=REQUEST_TIMEOUT_EXTERNAL)
+        if not resp or resp.status_code != 200 or not resp.text:
+            continue
+
+        soup = BeautifulSoup(resp.text, "lxml")
+        ext_name = None
+        ext_address = None
+        ext_founding = None
+
+        # 1. External JSON-LD
+        for script in soup.find_all("script", {"type": "application/ld+json"}):
+            raw = script.string or ""
+            try:
+                data = json.loads(raw)
+                for entity in flatten_jsonld(data):
+                    t = entity.get("@type", "")
+                    types = [t] if isinstance(t, str) else (t if isinstance(t, list) else [])
+                    if entity.get("name") and not ext_name:
+                        if any(ot in ("Organization", "LocalBusiness", "Corporation", "Brand") for ot in types) or "Article" in types:
+                            ext_name = str(entity["name"]).strip()
+                    if entity.get("legalName") and not ext_name:
+                        ext_name = str(entity["legalName"]).strip()
+                    if entity.get("address") and not ext_address:
+                        addr = entity["address"]
+                        if isinstance(addr, dict):
+                            parts = [
+                                addr.get("streetAddress", ""),
+                                addr.get("addressLocality", ""),
+                                addr.get("addressRegion", ""),
+                                addr.get("postalCode", ""),
+                                addr.get("addressCountry", ""),
+                            ]
+                            ext_address = " ".join(p for p in parts if p).strip()
+                        elif isinstance(addr, str):
+                            ext_address = addr.strip()
+                    if entity.get("foundingDate") and not ext_founding:
+                        ext_founding = str(entity["foundingDate"]).strip()
+            except json.JSONDecodeError:
+                pass
+
+        # 2. Wikipedia/Wikidata Infobox & Heading
+        parsed = urlparse(target_url)
+        domain = parsed.netloc.lower()
+        if "wikipedia.org" in domain or "wikidata.org" in domain:
+            h1 = soup.find("h1", id="firstHeading") or soup.find("h1")
+            if h1:
+                h1_text = clean_external_title(h1.get_text(strip=True))
+                if h1_text:
+                    ext_name = h1_text
+
+            infobox = soup.find("table", class_=lambda c: c and "infobox" in c)
+            if infobox:
+                for tr in infobox.find_all("tr"):
+                    th = tr.find("th")
+                    td = tr.find("td")
+                    if th and td:
+                        lbl = th.get_text(" ", strip=True).lower()
+                        val = td.get_text(" ", strip=True)
+                        if any(k in lbl for k in ("headquarters", "location", "address")) and not ext_address:
+                            ext_address = val
+                        elif any(k in lbl for k in ("founded", "launched", "formation")) and not ext_founding:
+                            ext_founding = val
+
+        # 3. Fallback name from meta tags or title
+        if not ext_name:
+            meta_title = soup.find("meta", {"property": "og:title"}) or soup.find("meta", {"name": "twitter:title"})
+            raw_title = meta_title["content"] if meta_title and meta_title.get("content") else (soup.title.string if soup.title else "")
+            if raw_title:
+                cleaned = clean_external_title(raw_title)
+                if cleaned:
+                    ext_name = cleaned
+
+        # Compare extracted external profile facts against site
+        discrepancies = []
+        if ext_name and site_names and is_materially_different_name(site_names, ext_name):
+            s_name = next(iter(site_names))
+            discrepancies.append(f"brand name: '{ext_name}' (external) vs '{s_name}' (site)")
+
+        if ext_address and site_addresses and is_materially_different_address(site_addresses, ext_address):
+            s_addr = next(iter(site_addresses))
+            discrepancies.append(f"address: '{ext_address}' (external) vs '{s_addr}' (site)")
+
+        if ext_founding and site_founding and is_materially_different_founding(site_founding, ext_founding):
+            discrepancies.append(f"founding info: '{ext_founding}' (external) vs '{site_founding}' (site)")
+
+        if discrepancies:
+            findings.append(make_finding(
+                title="Brand identity inconsistent between site and external profile",
+                severity="high",
+                evidence=(
+                    f"External profile at {target_url} conflicts with site data: {'; '.join(discrepancies)}. "
+                    "Inconsistent brand identity between site and authoritative external profiles confuses AI "
+                    "models and knowledge graphs attempting entity resolution."
+                ),
+                action=(
+                    f"Reconcile brand identity details between your website and external profile ({target_url}). "
+                    "Ensure brand name, primary address, and founding info are identical across all platforms."
+                ),
+            ))
+
+    return findings
+
 # ── Main audit logic ───────────────────────────────────────────────────────────
 
 def run(url: str) -> list[dict]:
@@ -337,9 +670,14 @@ def run(url: str) -> list[dict]:
             "Check network connectivity.",
         )]
 
-    # Collect facts and dates per page
+    # Collect facts, dates, and org identity per page
     all_facts = []
     all_dates = []
+    all_same_as: set[str] = set()
+    site_names: set[str] = set()
+    site_addresses: set[str] = set()
+    site_founding: Optional[str] = None
+    homepage_html: Optional[str] = None
 
     for page_url in pages:
         time.sleep(CRAWL_DELAY)
@@ -347,11 +685,24 @@ def run(url: str) -> list[dict]:
         if not resp or resp.status_code != 200:
             continue
 
+        if page_url == url or homepage_html is None:
+            homepage_html = resp.text
+
         facts = extract_facts_from_page(resp.text, page_url)
         all_facts.append(facts)
 
         dates = extract_dates_from_page(resp.text, page_url)
         all_dates.extend(dates)
+
+        same_as_urls, org_names, org_addrs, org_founding = extract_org_data_from_page(resp.text)
+        all_same_as.update(same_as_urls)
+        site_names.update(org_names)
+        site_addresses.update(org_addrs)
+        if org_founding and not site_founding:
+            site_founding = org_founding
+
+    if not site_names and homepage_html:
+        site_names.update(extract_fallback_site_names(homepage_html, url))
 
     # ── Fact consistency analysis ──────────────────────────────────────────────
 
@@ -492,6 +843,18 @@ def run(url: str) -> list[dict]:
                     "Even static pages (About, Pricing) should declare a dateModified when updated."
                 ),
             ))
+
+    # ── External profile / sameAs corroboration check ─────────────────────────
+    # If sameAs links are absent, this check is already covered by entity-clarity-audit — don't duplicate.
+    if all_same_as:
+        combined_addresses = site_addresses | set(all_addresses.keys())
+        corrob_findings = check_sameas_corroboration(
+            all_same_as=all_same_as,
+            site_names=site_names,
+            site_addresses=combined_addresses,
+            site_founding=site_founding,
+        )
+        findings.extend(corrob_findings)
 
     return findings
 

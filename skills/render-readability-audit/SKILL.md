@@ -7,7 +7,8 @@ description: >
   raw HTML that AI crawlers would see, and flags pages where key brand facts
   (name, price, address) are inaccessible without JS.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

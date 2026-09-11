@@ -7,7 +7,8 @@ description: >
   (dateModified, datePublished in JSON-LD and meta tags) that AI assistants
   use to judge whether information is current and trustworthy.
 license: MIT
-entrypoint: false
+metadata:
+  entrypoint: "false"
 ---
 
 ## When to use

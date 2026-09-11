@@ -353,6 +353,39 @@ def audit_sitemap(base_url: str, rp: Optional[urllib.robotparser.RobotFileParser
     return findings
 
 
+def audit_llms_txt(base_url: str) -> list[dict]:
+    """Check for the presence of /llms.txt at the site root."""
+    findings = []
+    llms_url = f"{base_url}/llms.txt"
+    resp = safe_get(llms_url)
+
+    is_present = False
+    if resp and resp.status_code == 200 and resp.text.strip():
+        ct = resp.headers.get("Content-Type", "").lower()
+        # Avoid soft-404 HTML pages served with HTTP 200
+        is_html = "text/html" in ct or "<!doctype html" in resp.text[:200].lower() or "<html" in resp.text[:200].lower()
+        if not is_html:
+            is_present = True
+
+    if not is_present:
+        status_info = f"HTTP {resp.status_code}" if resp else "unreachable"
+        findings.append(making_finding(
+            title="No /llms.txt file found at site root",
+            severity="low",
+            evidence=(
+                f"GET {llms_url} returned {status_info}. "
+                "/llms.txt is an emerging web convention (llmstxt.org) where sites publish "
+                "a curated, structured markdown summary of their content and documentation for LLMs."
+            ),
+            action=(
+                "Publish an /llms.txt file at your site root summarizing key pages, products, "
+                "and core facts in clean Markdown format to optimize consumption by AI assistants."
+            ),
+        ))
+
+    return findings
+
+
 def audit_http_status(start_url: str, base_url: str) -> list[dict]:
     findings = []
     queue = deque([start_url])
@@ -430,6 +463,10 @@ def run(url: str) -> list[dict]:
 
         sitemap_findings = audit_sitemap(base_url, rp)
         findings.extend(sitemap_findings)
+        time.sleep(CRAWL_DELAY)
+
+        llms_findings = audit_llms_txt(base_url)
+        findings.extend(llms_findings)
         time.sleep(CRAWL_DELAY)
 
         http_findings, _ = audit_http_status(url, base_url)
