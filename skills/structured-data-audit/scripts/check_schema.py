@@ -245,6 +245,16 @@ def flatten_graph(data: Any) -> list[dict]:
     return entities
 
 
+def get_entity_declared_types(entity: dict) -> list[str]:
+    """Get the immediate @type values declared directly on this entity."""
+    t = entity.get("@type")
+    if isinstance(t, str):
+        return [t]
+    elif isinstance(t, list):
+        return [str(x) for x in t if isinstance(x, str)]
+    return []
+
+
 def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[dict]:
     """Check a single JSON-LD entity for missing required/recommended props."""
     findings = []
@@ -381,6 +391,18 @@ def run(url: str) -> list[dict]:
     context_issues = []
     seen_context_urls = set()
 
+    missing_required_issues: dict[tuple, list[dict]] = {}
+    page_seen_req_issues: dict[tuple, set] = {}
+
+    missing_rec_issues: dict[tuple, list[dict]] = {}
+    page_seen_rec_issues: dict[tuple, set] = {}
+
+    offer_issues: dict[tuple, list[dict]] = {}
+    page_seen_offer_issues: dict[tuple, set] = {}
+
+    faq_issues: list[dict] = []
+    page_seen_faq: set = set()
+
     for page_url in pages:
         time.sleep(CRAWL_DELAY)
         resp = safe_get(page_url)
@@ -427,8 +449,66 @@ def run(url: str) -> list[dict]:
                     types = get_types(entity)
                     for t in types:
                         page_type_coverage[t] = page_type_coverage.get(t, 0) + 1
-                        # Check required/recommended properties
-                        findings.extend(check_entity_props(entity, t, page_url))
+
+                    declared_types = get_entity_declared_types(entity)
+                    if not declared_types:
+                        declared_types = [t for t in types if t in REQUIRED_PROPS or t in RECOMMENDED_PROPS]
+
+                    path = urlparse(page_url).path or "/"
+
+                    # Check required properties across declared types
+                    req_types = [t for t in declared_types if t in REQUIRED_PROPS]
+                    types_with_missing_req = [t for t in req_types if any(not entity.get(p) for p in REQUIRED_PROPS[t])]
+                    if types_with_missing_req:
+                        missing_props = sorted(list({p for t in types_with_missing_req for p in REQUIRED_PROPS[t] if not entity.get(p)}))
+                        type_label = "/".join(types_with_missing_req)
+                        issue_key = (type_label, tuple(missing_props))
+                        if page_url not in page_seen_req_issues.get(issue_key, set()):
+                            page_seen_req_issues.setdefault(issue_key, set()).add(page_url)
+                            missing_required_issues.setdefault(issue_key, []).append({
+                                "page_url": page_url,
+                                "path": path,
+                                "present_fields": [k for k in entity.keys() if not k.startswith('@')],
+                            })
+                    elif declared_types:
+                        # Only check recommended properties if all required properties are satisfied
+                        rec_types = [t for t in declared_types if t in RECOMMENDED_PROPS]
+                        types_with_missing_rec = [t for t in rec_types if any(not entity.get(p) for p in RECOMMENDED_PROPS[t])]
+                        if types_with_missing_rec:
+                            missing_rec = sorted(list({p for t in types_with_missing_rec for p in RECOMMENDED_PROPS[t] if not entity.get(p)}))
+                            type_label = "/".join(types_with_missing_rec)
+                            issue_key = (type_label, tuple(missing_rec))
+                            if page_url not in page_seen_rec_issues.get(issue_key, set()):
+                                page_seen_rec_issues.setdefault(issue_key, set()).add(page_url)
+                                missing_rec_issues.setdefault(issue_key, []).append({
+                                    "page_url": page_url,
+                                    "path": path,
+                                })
+
+                    # Product-specific: validate offers object
+                    if "Product" in declared_types and entity.get("offers"):
+                        offers = entity["offers"]
+                        if isinstance(offers, dict):
+                            offer_missing = sorted([p for p in ["price", "priceCurrency", "availability"] if not offers.get(p)])
+                            if offer_missing:
+                                off_key = tuple(offer_missing)
+                                if page_url not in page_seen_offer_issues.get(off_key, set()):
+                                    page_seen_offer_issues.setdefault(off_key, set()).add(page_url)
+                                    offer_issues.setdefault(off_key, []).append({
+                                        "page_url": page_url,
+                                        "path": path,
+                                    })
+
+                    # FAQPage: validate mainEntity
+                    if "FAQPage" in declared_types:
+                        main_entity = entity.get("mainEntity", [])
+                        if not isinstance(main_entity, list) or len(main_entity) == 0:
+                            if page_url not in page_seen_faq:
+                                page_seen_faq.add(page_url)
+                                faq_issues.append({
+                                    "page_url": page_url,
+                                    "path": path,
+                                })
         else:
             pages_without_jsonld.append(urlparse(page_url).path or "/")
 
@@ -467,6 +547,166 @@ def run(url: str) -> list[dict]:
                 "priority": "medium",
             },
         })
+
+    # Consolidate missing required property findings across pages
+    for (type_label, missing_props), items in missing_required_issues.items():
+        primary_type = type_label.split("/")[0]
+        if len(items) > 2:
+            page_urls = [it["page_url"] for it in items]
+            findings.append({
+                "title": f"{type_label} JSON-LD missing required properties across {len(items)} pages",
+                "severity": "high",
+                "category": "discoverability",
+                "skill_source": "structured-data-audit",
+                "evidence": (
+                    f"Found {type_label} JSON-LD blocks missing required fields: "
+                    f"{', '.join(missing_props)} across {len(items)} pages: "
+                    f"{', '.join(page_urls)}."
+                ),
+                "suggested_action": {
+                    "summary": (
+                        f"Add the following required properties to your {type_label} JSON-LD across affected pages: "
+                        f"{', '.join(missing_props)}. "
+                        f"See schema.org/{primary_type} for full spec."
+                    ),
+                    "priority": "high",
+                },
+            })
+        else:
+            for it in items:
+                findings.append({
+                    "title": f"{type_label} JSON-LD missing required properties on {it['path']}",
+                    "severity": "high",
+                    "category": "discoverability",
+                    "skill_source": "structured-data-audit",
+                    "evidence": (
+                        f"Page: {it['page_url']}. "
+                        f"Found {type_label} JSON-LD block but missing required fields: "
+                        f"{', '.join(missing_props)}. "
+                        f"Present fields: {', '.join(it['present_fields'])}."
+                    ),
+                    "suggested_action": {
+                        "summary": (
+                            f"Add the following required properties to your {type_label} JSON-LD: "
+                            f"{', '.join(missing_props)}. "
+                            f"See schema.org/{primary_type} for full spec."
+                        ),
+                        "priority": "high",
+                    },
+                })
+
+    # Consolidate missing recommended property findings across pages
+    for (type_label, missing_props), items in missing_rec_issues.items():
+        if len(items) > 2:
+            page_urls = [it["page_url"] for it in items]
+            findings.append({
+                "title": f"{type_label} JSON-LD missing high-value recommended properties across {len(items)} pages",
+                "severity": "medium",
+                "category": "discoverability",
+                "skill_source": "structured-data-audit",
+                "evidence": (
+                    f"{type_label} JSON-LD present across {len(items)} pages but missing recommended fields: "
+                    f"{', '.join(missing_props)}: {', '.join(page_urls)}. "
+                    "These fields significantly improve AI citation quality."
+                ),
+                "suggested_action": {
+                    "summary": (
+                        f"Add recommended properties to {type_label} JSON-LD across affected pages: "
+                        f"{', '.join(missing_props)}."
+                    ),
+                    "priority": "medium",
+                },
+            })
+        else:
+            for it in items:
+                findings.append({
+                    "title": f"{type_label} JSON-LD missing high-value recommended properties on {it['path']}",
+                    "severity": "medium",
+                    "category": "discoverability",
+                    "skill_source": "structured-data-audit",
+                    "evidence": (
+                        f"Page: {it['page_url']}. "
+                        f"{type_label} JSON-LD present and required fields satisfied, but missing "
+                        f"recommended fields: {', '.join(missing_props)}. "
+                        "These fields significantly improve AI citation quality."
+                    ),
+                    "suggested_action": {
+                        "summary": (
+                            f"Add recommended properties to {type_label} JSON-LD: "
+                            f"{', '.join(missing_props)}."
+                        ),
+                        "priority": "medium",
+                    },
+                })
+
+    # Product offer issues
+    for missing_props, items in offer_issues.items():
+        if len(items) > 2:
+            page_urls = [it["page_url"] for it in items]
+            findings.append({
+                "title": f"Product Offer object missing properties across {len(items)} pages",
+                "severity": "high",
+                "category": "discoverability",
+                "skill_source": "structured-data-audit",
+                "evidence": (
+                    f"Product JSON-LD has 'offers' object but missing {', '.join(missing_props)} "
+                    f"across {len(items)} pages: {', '.join(page_urls)}."
+                ),
+                "suggested_action": {
+                    "summary": (
+                        f"Add to the offers object: {', '.join(missing_props)}. "
+                        "Use priceCurrency: 'USD' (ISO 4217) and availability: 'https://schema.org/InStock'."
+                    ),
+                    "priority": "high",
+                },
+            })
+        else:
+            for it in items:
+                findings.append({
+                    "title": f"Product Offer object missing properties on {it['path']}",
+                    "severity": "high",
+                    "category": "discoverability",
+                    "skill_source": "structured-data-audit",
+                    "evidence": (
+                        f"Page: {it['page_url']}. "
+                        f"Product JSON-LD has 'offers' object but missing: {', '.join(missing_props)}."
+                    ),
+                    "suggested_action": {
+                        "summary": (
+                            f"Add to the offers object: {', '.join(missing_props)}. "
+                            "Use priceCurrency: 'USD' (ISO 4217) and availability: 'https://schema.org/InStock'."
+                        ),
+                        "priority": "high",
+                    },
+                })
+
+    # FAQPage mainEntity issues
+    if len(faq_issues) > 2:
+        page_urls = [it["page_url"] for it in faq_issues]
+        findings.append({
+            "title": f"FAQPage mainEntity is empty or invalid across {len(faq_issues)} pages",
+            "severity": "high",
+            "category": "discoverability",
+            "skill_source": "structured-data-audit",
+            "evidence": f"FAQPage JSON-LD has no items in mainEntity across {len(faq_issues)} pages: {', '.join(page_urls)}.",
+            "suggested_action": {
+                "summary": "Populate mainEntity with Question objects each having name and acceptedAnswer.",
+                "priority": "high",
+            },
+        })
+    else:
+        for it in faq_issues:
+            findings.append({
+                "title": f"FAQPage mainEntity is empty or invalid on {it['path']}",
+                "severity": "high",
+                "category": "discoverability",
+                "skill_source": "structured-data-audit",
+                "evidence": f"Page: {it['page_url']}. FAQPage JSON-LD has no items in mainEntity.",
+                "suggested_action": {
+                    "summary": "Populate mainEntity with Question objects each having name and acceptedAnswer.",
+                    "priority": "high",
+                },
+            })
 
     total_pages = len(pages)
     no_markup_pct = len(pages_without_jsonld) / total_pages * 100 if total_pages else 0

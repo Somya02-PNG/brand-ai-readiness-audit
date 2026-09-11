@@ -279,21 +279,29 @@ def audit_robots(base_url: str) -> tuple[list[dict], Optional[urllib.robotparser
         if blocked_paths:
             blocked.append((agent, description, blocked_paths))
 
-    for agent, description, blocked_paths in blocked:
-        severity = "critical" if "/" in blocked_paths else "high"
+    if blocked:
+        all_blocked_paths = [p for p in key_paths if any(p in bp for _, _, bp in blocked)]
+        for _, _, bp in blocked:
+            for p in bp:
+                if p not in all_blocked_paths:
+                    all_blocked_paths.append(p)
+
+        bot_names = [agent for agent, _, _ in blocked]
+        severity = "critical" if any("/" in bp for _, _, bp in blocked) else "high"
+        bot_count = len(blocked)
+        bot_label = f"{bot_count} AI crawler" if bot_count == 1 else f"{bot_count} AI crawlers"
+
         findings.append(making_finding(
-            title=f"AI crawler '{agent}' blocked by robots.txt",
+            title=f"{bot_label} blocked by robots.txt",
             severity=severity,
             evidence=(
-                f"robots.txt Disallow rule prevents {agent} ({description}) "
-                f"from accessing: {', '.join(blocked_paths)}. "
-                f"Full robots.txt snippet contains User-agent: {agent}."
+                f"robots.txt Disallow rules prevent {bot_label} ({', '.join(bot_names)}) "
+                f"from accessing: {', '.join(all_blocked_paths)}."
             ),
             action=(
-                f"Review the Disallow rules for '{agent}' in robots.txt. "
-                "If you want AI assistants to cite your content, remove or narrow these rules. "
-                "To allow all AI crawlers: ensure no User-agent block covers GPTBot, "
-                "anthropic-ai, or Google-Extended without a compensating Allow rule."
+                f"Review the Disallow rules in robots.txt for the blocked AI crawlers ({', '.join(bot_names)}). "
+                "If you want AI assistants to cite and summarize your content, remove or narrow these rules to allow "
+                "access to key public pages, or add compensating Allow directives."
             ),
         ))
 
