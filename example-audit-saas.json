@@ -1,0 +1,121 @@
+{
+  "site": "stripe.com",
+  "audited_at": "2026-09-11T09:04:27Z",
+  "summary": {
+    "total_findings": 9,
+    "critical": 0,
+    "high": 4,
+    "medium": 4,
+    "low": 1
+  },
+  "findings": [
+    {
+      "title": "Article/NewsArticle JSON-LD missing required properties across 6 pages",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "Found Article/NewsArticle JSON-LD blocks missing required fields: author across 6 pages: https://stripe.com/in/newsroom/news/bfcm2025, https://stripe.com/in/newsroom/news/google-and-stripe, https://stripe.com/in/newsroom/news/stripe-ford-agreement, https://stripe.com/in/newsroom/news/stripe-openai-instant-checkout, https://stripe.com/in/newsroom/news/stripe-and-uber, https://stripe.com/in/newsroom/news/nvidia-collaboration-with-stripe.",
+      "suggested_action": {
+        "summary": "Add the following required properties to your Article/NewsArticle JSON-LD across affected pages: author. See schema.org/Article for full spec.",
+        "priority": "high"
+      },
+      "id": "F-001"
+    },
+    {
+      "title": "Product pages detected but no Product JSON-LD found",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "URL patterns suggest this site has product pages (paths matching /product/, /shop/, /item/), but no Product schema.org JSON-LD was found on any of them.",
+      "suggested_action": {
+        "summary": "Add Product JSON-LD to all product pages with at minimum: name, description, offers (price, priceCurrency, availability), image, brand.",
+        "priority": "high"
+      },
+      "id": "F-002"
+    },
+    {
+      "title": "Physical address inconsistency — 24 variants found",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Found 24 distinct address strings across pages. Details: '1 University Avenue, 10th Floor Toronto ON M5J 2P1' on: https://stripe.com; '1 Wilton Park, Wilton Place, Grand Canal Street Lower Dublin 2 D02 FX04' on: https://stripe.com; '10 Boulevard Haussmann, 2nd Floor Paris Île-de-France 75009' on: https://stripe.com; '201 Bishopsgate, 5th Floor London EC2M 3AB' on: https://stripe.com. Address inconsistency is a strong negative signal for AI confidence in local business data.",
+      "suggested_action": {
+        "summary": "Standardize your address in a single CMS variable. Use a structured address in Organization/LocalBusiness JSON-LD with: streetAddress, addressLocality, addressRegion, postalCode, addressCountry.",
+        "priority": "high"
+      },
+      "id": "F-003"
+    },
+    {
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "category": "discoverability",
+      "skill_source": "freshness-corroboration-audit",
+      "evidence": "Checked 15 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. Include <lastmod> dates in your sitemap.xml.",
+        "priority": "high"
+      },
+      "id": "F-004"
+    },
+    {
+      "title": "29.4% of content on / requires JS to render",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "render-readability-audit",
+      "evidence": "Raw HTML: 1889 words. Playwright-rendered: 2334 words. Render gap: 29.4%. Affected URL: https://stripe.com",
+      "suggested_action": {
+        "summary": "Review client-side-only components. Move key informational content to server-rendered or static HTML.",
+        "priority": "medium"
+      },
+      "id": "F-005"
+    },
+    {
+      "title": "Article JSON-LD missing high-value recommended properties on /in/blog/introducing-our-agentic-commerce-solutions",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "structured-data-audit",
+      "evidence": "Page: https://stripe.com/in/blog/introducing-our-agentic-commerce-solutions. Article JSON-LD present and required fields satisfied, but missing recommended fields: description. These fields significantly improve AI citation quality.",
+      "suggested_action": {
+        "summary": "Add recommended properties to Article JSON-LD: description.",
+        "priority": "medium"
+      },
+      "id": "F-006"
+    },
+    {
+      "title": "sameAs present but missing high-trust disambiguators: Wikidata",
+      "severity": "medium",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "Found sameAs links to: GitHub, YouTube, Wikipedia, Instagram, Facebook, Crunchbase, Twitter/X, LinkedIn. Missing high-trust identity anchors: Wikidata. Wikidata/Wikipedia/Crunchbase entries are the strongest signals for AI entity resolution.",
+      "suggested_action": {
+        "summary": "Add the following to your sameAs array: Wikidata. If no Wikidata entry exists for your brand, create one at https://www.wikidata.org/wiki/Special:NewItem",
+        "priority": "medium"
+      },
+      "id": "F-007"
+    },
+    {
+      "title": "No call-to-action detected above the fold on homepage",
+      "severity": "medium",
+      "category": "engagement",
+      "skill_source": "engagement-audit",
+      "evidence": "Scanned the first 25% of homepage (https://stripe.com) HTML body for CTA keywords (get started, start free, sign up, signup, try for free, try free, free trial, buy now...). None found in above-fold region. Visitors arriving from AI assistant recommendations need an immediate next action.",
+      "suggested_action": {
+        "summary": "Place a prominent CTA button/link in the hero section of the homepage. Use action-oriented text (e.g., 'Start Free Trial', 'Get a Demo', 'Shop Now'). Ensure it's visible without scrolling on desktop (above ~700px).",
+        "priority": "medium"
+      },
+      "id": "F-008"
+    },
+    {
+      "title": "About page lacks sufficient disambiguating identity facts (score: 0/6)",
+      "severity": "low",
+      "category": "discoverability",
+      "skill_source": "entity-clarity-audit",
+      "evidence": "About page: https://stripe.com/about. Detected disambiguating facts: none. Missing categories: founding year, location hq, industry vertical, team size, customer count, geographic reach. Generic About pages increase the risk of AI entity confusion.",
+      "suggested_action": {
+        "summary": "Improve the About page to include specific facts: founding year, HQ city/country, industry vertical, team size, customer count, and geographic reach. These specifics help AI models build an accurate entity profile.",
+        "priority": "low"
+      },
+      "id": "F-009"
+    }
+  ]
+}

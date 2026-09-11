@@ -478,7 +478,7 @@ def run(url: str) -> list[dict]:
 
                 # After all retries: check the rendered/raw ratio.
                 # < 20% → inconclusive (likely JS-gated / consent-walled)
-                # < 100% but ≥ 20% → incomplete extraction, skip silently
+                # ≥ 20% → compute render gap and include in gap_results
                 if raw_words > 0 and (rendered_words / raw_words) < RENDER_RATIO_INCONCLUSIVE:
                     print(
                         f"[render-readability] Render inconclusive for {page_url}: "
@@ -487,15 +487,6 @@ def run(url: str) -> list[dict]:
                         file=sys.stderr,
                     )
                     inconclusive_urls.append(page_url)
-                    continue
-
-                if rendered_words < raw_words:
-                    print(
-                        f"[render-readability] Render extraction for {page_url} was likely incomplete "
-                        f"(rendered {rendered_words} < raw {raw_words} words, ratio={ratio:.1%}); "
-                        "skipping render gap finding.",
-                        file=sys.stderr,
-                    )
                     continue
 
                 gap_pct = compute_render_gap(raw_text, rendered_text)
