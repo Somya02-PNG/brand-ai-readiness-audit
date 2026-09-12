@@ -125,12 +125,39 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
         or any(k in domain for k in ["news", "verge", "times", "post", "blog", "press", "media"])
     )
     is_ecommerce = any(k in text_corpus for k in ["product", "offers", "cart", "checkout", "sku", "store", "shop"])
-    has_faq = "faqpage" in text_corpus or " faq" in text_corpus or "frequently asked questions" in text_corpus
-    has_llms = "llms.txt" in text_corpus
-    has_author_links = "author bio" in text_corpus or "author sameas" in text_corpus
-    has_speakable = "speakable" in text_corpus
-    has_breadcrumbs = "breadcrumblist" in text_corpus
-    has_wikidata = "wikidata" in text_corpus and "missing" not in text_corpus
+    has_faq = (
+        ("faqpage" in text_corpus or "frequently asked questions" in text_corpus)
+        and "missing" not in text_corpus
+        and "no faqpage" not in text_corpus
+    )
+    has_llms = (
+        "llms.txt" in text_corpus
+        and "missing" not in text_corpus
+        and "no /llms.txt" not in text_corpus
+        and "no llms.txt" not in text_corpus
+        and "not found" not in text_corpus
+    )
+    has_author_links = (
+        ("author bio" in text_corpus or "author sameas" in text_corpus)
+        and "missing" not in text_corpus
+        and "no author" not in text_corpus
+    )
+    has_speakable = (
+        "speakable" in text_corpus
+        and "missing" not in text_corpus
+        and "no speakable" not in text_corpus
+    )
+    has_breadcrumbs = (
+        ("breadcrumblist" in text_corpus or "breadcrumb" in text_corpus)
+        and "missing" not in text_corpus
+        and "no breadcrumb" not in text_corpus
+        and "no breadcrumbs" not in text_corpus
+    )
+    has_wikidata = (
+        "wikidata" in text_corpus
+        and "missing" not in text_corpus
+        and "no wikidata" not in text_corpus
+    )
 
     candidates = []
 
