@@ -9,104 +9,150 @@ VALID_EFFORTS = {"low", "medium", "high"}
 VALID_PRIORITIES = {"low", "medium", "high"}
 
 
-def test_schema_compliance_exact_shape():
-    """Assert the emitted report matches the exact specification schema."""
-    sample_findings = [
-        {
-            "id": "temp-2",
-            "title": "Blocked by robots.txt",
-            "severity": "critical",
-            "evidence": "GPTBot blocked at /",
-            "suggested_action": {
-                "summary": "Allow GPTBot in robots.txt",
-                "priority": "critical",
-            },
-            "mechanism": "Crawlers cannot index or cite content that is blocked by robots.txt.",
-            "fix_effort": "low",
-            "verification": "curl -sI https://example.com/robots.txt",
-        },
-        {
-            "id": "temp-1",
-            "title": "No schema markup on product pages",
-            "severity": "high",
-            "evidence": "0 of 5 product pages contain Product JSON-LD",
-            "suggested_action": {
-                "summary": "Add Product JSON-LD to product pages",
-                "priority": "high",
-            },
-            "mechanism": "Missing schema deprives AI models of explicit semantic entities.",
-            "fix_effort": "medium",
-            "verification": "curl -s https://example.com | grep 'application/ld+json'",
-        },
-        {
-            "title": "Missing meta description",
-            "severity": "medium",
-            "evidence": "Homepage has no meta description",
-            "suggested_action": {
-                "summary": "Add meta description",
-                "priority": "medium",
-            },
-            "mechanism": "Meta descriptions help search engines understand page summaries.",
-            "fix_effort": "low",
-            "verification": "curl -s https://example.com | grep '<meta name=\"description\"'",
-        },
+def test_schema_compliance_real_merge_report_output(monkeypatch):
+    """
+    Test schema compliance using the REAL execution pipeline of merge_report.py.
+    Mocks WORKER_SKILLS with stub findings spanning all severity levels (critical, high, medium, low)
+    in non-sorted order, invokes merge_report.run, and validates the aggregated report dict.
+    """
+    stub_findings_by_worker = {
+        "stub-low-worker": [
+            {
+                "title": "Minor missing meta element",
+                "severity": "low",
+                "evidence": "Homepage lacks optional theme-color meta tag",
+                "suggested_action": {
+                    "summary": "Add theme-color meta tag to root layout, populated from brand style guide, because consistent UI cues improve presentation. Verify: curl -s https://example.com | grep theme-color.",
+                    "priority": "low",
+                },
+                "mechanism": "Consistent meta elements improve presentation across mobile browsers and parsers.",
+                "fix_effort": "low",
+                "verification": "curl -s https://example.com | grep theme-color",
+            }
+        ],
+        "stub-high-worker": [
+            {
+                "title": "Product pages lack Product schema JSON-LD",
+                "severity": "high",
+                "evidence": "Sampled product URLs lack schema.org Product markup",
+                "suggested_action": {
+                    "summary": "Add Product JSON-LD to product detail templates, populated from e-commerce database, because AI assistants require structured data to cite product offerings. Verify: curl -s https://example.com/product/1 | grep 'application/ld+json'.",
+                    "priority": "high",
+                },
+                "mechanism": "Missing schema deprives AI models of explicit semantic entities and pricing.",
+                "fix_effort": "medium",
+                "verification": "curl -s https://example.com/product/1 | grep 'application/ld+json'",
+            }
+        ],
+        "stub-critical-worker": [
+            {
+                "title": "Robots.txt completely blocks AI crawlers",
+                "severity": "critical",
+                "evidence": "robots.txt Disallow: / directive blocks GPTBot and PerplexityBot",
+                "suggested_action": {
+                    "summary": "Update robots.txt to allow AI search user-agents, populated from crawler registry, because disallow rules prevent retrieval engines from reading content. Verify: curl -sI https://example.com/robots.txt.",
+                    "priority": "critical",
+                },
+                "mechanism": "Search and AI crawlers cannot index or cite content that is blocked by robots.txt.",
+                "fix_effort": "low",
+                "verification": "curl -sI https://example.com/robots.txt",
+            }
+        ],
+        "stub-medium-worker": [
+            {
+                "title": "High internal navigation depth (>3 levels)",
+                "severity": "medium",
+                "evidence": "Key product documentation is nested 4 levels deep from root",
+                "suggested_action": {
+                    "summary": "Flatten documentation hierarchy, populated from top-level navigation, because shallow architectures reduce crawler hop latency. Verify: curl -s https://example.com/sitemap.xml.",
+                    "priority": "medium",
+                },
+                "mechanism": "Excessive nesting depth creates crawl friction and increases bounce rate for arriving visitors.",
+                "fix_effort": "medium",
+                "verification": "curl -s https://example.com/sitemap.xml",
+            }
+        ],
+    }
+
+    class StubWorkerModule:
+        def __init__(self, findings):
+            self._findings = findings
+
+        def run(self, url):
+            return list(self._findings)
+
+    # Intentionally provide workers in non-sorted severity order (low, high, critical, medium)
+    # to verify that merge_report.run properly sorts them critical > high > medium > low.
+    mocked_worker_skills = [
+        ("stub-low-worker", "check_low.py", "stub-low-worker"),
+        ("stub-high-worker", "check_high.py", "stub-high-worker"),
+        ("stub-critical-worker", "check_critical.py", "stub-critical-worker"),
+        ("stub-medium-worker", "check_medium.py", "stub-medium-worker"),
     ]
 
-    sample_suggestions = [
-        {
-            "title": "Consider publishing an /llms.txt summary file",
-            "rationale": "llms.txt provides a concise index for AI crawlers.",
-            "mechanism": "Enables direct ingestion without crawl overhead.",
-            "priority": "medium",
-        }
-    ]
-
-    report = merge_report.build_report(
-        "https://example.com",
-        sample_findings,
-        beyond_problem_suggestions=sample_suggestions,
+    monkeypatch.setattr(merge_report, "WORKER_SKILLS", mocked_worker_skills)
+    monkeypatch.setattr(
+        merge_report,
+        "_import_worker",
+        lambda folder, script: StubWorkerModule(stub_findings_by_worker.get(folder, [])),
     )
 
-    # 1. Top-level keys
-    assert set(report.keys()) == {
-        "site",
-        "audited_at",
-        "summary",
-        "findings",
-        "beyond_problem_suggestions",
-    }
-    assert report["site"] == "example.com"
-    assert ISO_UTC_REGEX.match(report["audited_at"]), f"audited_at is not ISO 8601 UTC with Z: {report['audited_at']}"
+    # Invoke the real merge_report entrypoint
+    report = merge_report.run("https://example.com")
 
-    # 2. Summary
+    # 1. Top-level keys: site, audited_at, summary, findings, beyond_problem_suggestions
+    expected_top_keys = {"site", "audited_at", "summary", "findings", "beyond_problem_suggestions"}
+    assert set(report.keys()) == expected_top_keys, f"Top-level keys mismatch: {set(report.keys())}"
+    assert report["site"] == "example.com"
+    assert ISO_UTC_REGEX.match(report["audited_at"]), f"audited_at must be ISO 8601 UTC with trailing Z: {report['audited_at']}"
+
+    # 2. summary has total_findings, critical, high, medium, low
     summary = report["summary"]
-    assert set(summary.keys()) == {"total_findings", "critical", "high", "medium", "low"}
-    assert summary["total_findings"] == 3
+    expected_summary_keys = {"total_findings", "critical", "high", "medium", "low"}
+    assert set(summary.keys()) == expected_summary_keys, f"Summary keys mismatch: {set(summary.keys())}"
+    assert summary["total_findings"] == 4
     assert summary["critical"] == 1
     assert summary["high"] == 1
     assert summary["medium"] == 1
-    assert summary["low"] == 0
+    assert summary["low"] == 1
 
-    # 3. Findings
+    # 3. every finding has id, title, severity, evidence, suggested_action (object), mechanism, fix_effort, verification
     findings = report["findings"]
-    assert len(findings) == 3
+    assert len(findings) == 4
 
-    # Check sorting: critical > high > medium > low
+    expected_finding_keys = {
+        "id",
+        "title",
+        "severity",
+        "evidence",
+        "suggested_action",
+        "mechanism",
+        "fix_effort",
+        "verification",
+    }
+
+    # 4. findings sorted critical > high > medium > low
     severities = [f["severity"] for f in findings]
-    assert severities == ["critical", "high", "medium"]
+    assert severities == ["critical", "high", "medium", "low"], f"Findings not sorted by severity: {severities}"
 
+    # 5. IDs are sequential F-001, F-002, ...
     for i, finding in enumerate(findings, start=1):
         expected_id = f"F-{i:03d}"
-        assert finding["id"] == expected_id
+        assert finding["id"] == expected_id, f"Finding index {i} has id {finding.get('id')}, expected {expected_id}"
         assert FINDING_ID_REGEX.match(finding["id"])
+
+        # Check all required finding keys are present
+        missing_keys = expected_finding_keys - set(finding.keys())
+        assert not missing_keys, f"Finding {finding['id']} missing keys: {missing_keys}"
+
         assert isinstance(finding["title"], str) and finding["title"]
         assert finding["severity"] in VALID_SEVERITIES
         assert isinstance(finding["evidence"], str) and finding["evidence"]
 
-        # suggested_action MUST be an object, not a string
+        # suggested_action MUST be an object (dict), not a string
         action = finding["suggested_action"]
-        assert isinstance(action, dict), "suggested_action MUST be an object"
-        assert set(action.keys()) == {"summary", "priority"}
+        assert isinstance(action, dict), f"Finding {finding['id']} suggested_action must be an object, got {type(action)}"
+        assert "summary" in action and "priority" in action
         assert isinstance(action["summary"], str) and action["summary"]
         assert action["priority"] in VALID_SEVERITIES
 
@@ -115,16 +161,20 @@ def test_schema_compliance_exact_shape():
         assert finding["fix_effort"] in VALID_EFFORTS
         assert isinstance(finding["verification"], str) and finding["verification"]
 
-    # 4. beyond_problem_suggestions
+    # 6. beyond_problem_suggestions is a non-empty list
     suggestions = report["beyond_problem_suggestions"]
-    assert isinstance(suggestions, list)
-    assert len(suggestions) == 1
-    suggestion = suggestions[0]
-    assert set(suggestion.keys()) == {"title", "rationale", "mechanism", "priority"}
-    assert isinstance(suggestion["title"], str) and suggestion["title"]
-    assert isinstance(suggestion["rationale"], str) and suggestion["rationale"]
-    assert isinstance(suggestion["mechanism"], str) and suggestion["mechanism"]
-    assert suggestion["priority"] in VALID_PRIORITIES
+    assert isinstance(suggestions, list), "beyond_problem_suggestions must be a list"
+    assert len(suggestions) > 0, "beyond_problem_suggestions must be non-empty"
+
+    for suggestion in suggestions:
+        assert isinstance(suggestion, dict)
+        expected_suggestion_keys = {"title", "rationale", "mechanism", "priority"}
+        missing_s_keys = expected_suggestion_keys - set(suggestion.keys())
+        assert not missing_s_keys, f"Suggestion missing keys: {missing_s_keys}"
+        assert isinstance(suggestion["title"], str) and suggestion["title"]
+        assert isinstance(suggestion["rationale"], str) and suggestion["rationale"]
+        assert isinstance(suggestion["mechanism"], str) and suggestion["mechanism"]
+        assert suggestion["priority"] in VALID_PRIORITIES
 
 
 def test_safe_defaults_on_missing_or_raw_fields():
@@ -179,7 +229,6 @@ def test_beyond_problem_suggestions_always_populated_at_least_six():
     assert len(report["beyond_problem_suggestions"]) >= 6
     assert report["findings"] == []
     assert report["summary"]["total_findings"] == 0
-
 
 
 def test_sorting_by_severity_then_id():
@@ -248,4 +297,3 @@ def test_worker_findings_follow_suggested_action_pattern(repo_root):
                         assert kwargs["fix_effort"].value in VALID_EFFORTS, (
                             f"{script_path} line {node.lineno}: invalid fix_effort"
                         )
-

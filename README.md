@@ -274,10 +274,12 @@ brand-ai-readiness-audit/
     │   ├── page_ssr.html
     │   ├── robots_block_gptbot.txt
     │   └── robots_partial_block.txt
+    ├── test_beyond_problem.py             ← Strategic beyond-problem suggestions tests
     ├── test_crawl_access.py               ← Crawl access, bot-walls & fetch cap tests
     ├── test_crawler_registry.py           ← 14 AI bot registry validation tests
     ├── test_imports.py                    ← Clean import verification for all skill scripts
     ├── test_merge_report.py               ← Aggregation, sorting & worker fallback tests
+    ├── test_render_gap.py                 ← Playwright headless SSR vs. JS render gap tests
     ├── test_robots_parser.py              ← robots.txt parser & edge cases tests
     └── test_schema_compliance.py          ← JSON schema floor & action pattern tests
 ```
