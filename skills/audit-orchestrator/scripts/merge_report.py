@@ -201,9 +201,11 @@ def normalize_finding(raw: dict) -> dict:
         "priority": action_priority,
     }
 
-    mechanism = derive_mechanism(raw)
-    fix_effort = derive_fix_effort(raw, sev)
-    verification = derive_verification(raw)
+    mechanism = derive_mechanism(raw) or "unknown"
+    fix_effort = derive_fix_effort(raw, sev) or "low"
+    if fix_effort not in ("low", "medium", "high"):
+        fix_effort = "low"
+    verification = derive_verification(raw) or "unknown"
 
     finding = {
         "id": str(raw.get("id") or ""),
@@ -215,11 +217,6 @@ def normalize_finding(raw: dict) -> dict:
         "fix_effort": fix_effort,
         "verification": verification,
     }
-
-    # Retain optional extension fields if present
-    for opt_key in ("category", "skill_source"):
-        if opt_key in raw:
-            finding[opt_key] = raw[opt_key]
 
     return finding
 
