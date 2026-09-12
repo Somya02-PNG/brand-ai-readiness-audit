@@ -17,6 +17,8 @@ REQUIRED_CRAWLERS = [
     "Applebot-Extended",
     "meta-externalagent",
     "cohere-ai",
+    "Omgilibot",
+    "Googlebot",
 ]
 
 

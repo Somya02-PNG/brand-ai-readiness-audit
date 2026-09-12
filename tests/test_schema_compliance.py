@@ -297,3 +297,81 @@ def test_worker_findings_follow_suggested_action_pattern(repo_root):
                         assert kwargs["fix_effort"].value in VALID_EFFORTS, (
                             f"{script_path} line {node.lineno}: invalid fix_effort"
                         )
+
+
+def test_example_audit_reports_schema_compliance(repo_root):
+    """
+    Validates that all example audit JSON reports (e.g. blog, ecommerce, saas)
+    comply strictly with the report schema floor (integrates validate_schema.py).
+    """
+    import json
+    import glob
+
+    example_files = glob.glob(str(repo_root / "example-audit-*.json"))
+    assert len(example_files) >= 3, f"Expected at least 3 example audit reports, found {len(example_files)}"
+
+    required_top_keys = {"site", "audited_at", "summary", "findings", "beyond_problem_suggestions"}
+    required_summary_keys = {"total_findings", "critical", "high", "medium", "low"}
+    required_finding_keys = {
+        "id",
+        "title",
+        "severity",
+        "evidence",
+        "suggested_action",
+        "mechanism",
+        "fix_effort",
+        "verification",
+    }
+    required_suggestion_keys = {"title", "rationale", "mechanism", "priority"}
+
+    for file_path in example_files:
+        with open(file_path, "r", encoding="utf-8") as f:
+            report = json.load(f)
+
+        # 1. Top-level keys
+        missing_top = required_top_keys - set(report.keys())
+        assert not missing_top, f"{file_path} missing top-level keys: {missing_top}"
+        assert isinstance(report["site"], str) and report["site"]
+        assert ISO_UTC_REGEX.match(report["audited_at"])
+
+        # 2. Summary
+        summary = report["summary"]
+        missing_summary = required_summary_keys - set(summary.keys())
+        assert not missing_summary, f"{file_path} missing summary keys: {missing_summary}"
+        for k in required_summary_keys:
+            assert isinstance(summary[k], int) and summary[k] >= 0
+
+        # 3. Findings
+        findings = report["findings"]
+        assert isinstance(findings, list)
+        assert summary["total_findings"] == len(findings)
+
+        for i, finding in enumerate(findings, start=1):
+            fid = finding.get("id", f"index-{i}")
+            missing_f = required_finding_keys - set(finding.keys())
+            assert not missing_f, f"{file_path} finding {fid} missing keys: {missing_f}"
+
+            assert finding["id"] == f"F-{i:03d}"
+            assert finding["severity"] in VALID_SEVERITIES
+            assert isinstance(finding["evidence"], str) and finding["evidence"]
+
+            action = finding["suggested_action"]
+            assert isinstance(action, dict), f"{file_path} finding {fid} suggested_action must be dict"
+            assert "summary" in action and "priority" in action
+            assert isinstance(action["summary"], str) and action["summary"]
+            assert action["priority"] in VALID_SEVERITIES
+
+            assert isinstance(finding["mechanism"], str) and finding["mechanism"]
+            assert finding["fix_effort"] in VALID_EFFORTS
+            assert isinstance(finding["verification"], str) and finding["verification"]
+
+        # 4. Beyond-problem suggestions
+        suggestions = report["beyond_problem_suggestions"]
+        assert isinstance(suggestions, list)
+        assert len(suggestions) >= 5, f"{file_path} beyond_problem_suggestions has {len(suggestions)} items (< 5)"
+
+        for j, item in enumerate(suggestions):
+            missing_s = required_suggestion_keys - set(item.keys())
+            assert not missing_s, f"{file_path} suggestion {j} missing keys: {missing_s}"
+            assert item["priority"] in VALID_PRIORITIES
+

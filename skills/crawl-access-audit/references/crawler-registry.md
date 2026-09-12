@@ -139,6 +139,22 @@ A comprehensive reference of known artificial intelligence (AI) crawlers, search
 - **Robots.txt Behavior**: Respects `User-agent: cohere-ai` and `*`.
 - **Recommended Policy**: Allow for presence in enterprise RAG systems leveraging Cohere models.
 
+### 15. Omgilibot
+- **Operator**: Webz.io
+- **User-Agent Token**: `Omgilibot`
+- **Example User-Agent String**: `Omgilibot/0.4 (+http://www.omgili.com/Crawler.html)`
+- **Purpose**: Crawls discussion boards, news, and public web content to provide structured data feeds to commercial AI and analytics platforms.
+- **Robots.txt Behavior**: Respects `User-agent: Omgilibot` and wildcard `*`.
+- **Recommended Policy**: Configure based on organizational policy for commercial training feeds.
+
+### 16. Googlebot
+- **Operator**: Google
+- **User-Agent Token**: `Googlebot`
+- **Example User-Agent String**: `Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)`
+- **Purpose**: Google's primary web crawler. Included in registry as a baseline search indexer reference to compare AI-specific restrictions against general search indexing access.
+- **Robots.txt Behavior**: Respects `User-agent: Googlebot` and wildcard `*`. Executes client-side JavaScript.
+- **Recommended Policy**: Allow on all public indexable pages.
+
 ---
 
 ## robots.txt Matching Rules

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-skill marketplace**: Modular agent skills architecture adhering to the Agent Skills specification, orchestrated through a single marketplace entrypoint (`marketplace.json`).
 - **7 audit workers**: Implemented 1 entrypoint orchestrator and 6 specialized audit workers:
   - `audit-orchestrator`: Concurrent orchestration, fault tolerance, deduplication, and report assembly.
-  - `crawl-access-audit`: Evaluates robots.txt rules against 14 AI crawlers, HTTP status codes, redirect chains, and sitemap/llms.txt presence.
+  - `crawl-access-audit`: Evaluates robots.txt rules against 16 AI and search crawlers, HTTP status codes, redirect chains, and sitemap/llms.txt presence.
   - `render-readability-audit`: Quantifies JavaScript render gap between raw HTML and Playwright rendered DOM.
   - `structured-data-audit`: Audits schema.org JSON-LD presence, JSON syntax, required properties, and high-value corroboration markup.
   - `freshness-corroboration-audit`: Cross-checks contact info consistency (phone/address/email) and content freshness timestamps.

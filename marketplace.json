@@ -8,42 +8,49 @@
   "keywords": ["ai-readiness", "seo", "structured-data", "brand", "audit", "discoverability", "engagement"],
   "skills": [
     {
+      "id": "audit-orchestrator",
       "name": "audit-orchestrator",
       "description": "Entrypoint skill. Accepts a URL, invokes all six worker audit skills, merges findings into a single schema-compliant JSON report with severity counts and sequential finding IDs.",
       "path": "skills/audit-orchestrator",
       "entrypoint": true
     },
     {
+      "id": "crawl-access-audit",
       "name": "crawl-access-audit",
       "description": "Checks whether AI crawlers and search bots can access the site: robots.txt disallow rules, HTTP status codes, redirect chains, and sitemap.xml presence.",
       "path": "skills/crawl-access-audit",
       "entrypoint": false
     },
     {
+      "id": "render-readability-audit",
       "name": "render-readability-audit",
       "description": "Detects content that is only visible after JavaScript execution by diffing raw HTTP response text against Playwright-rendered DOM text. Reports the percentage of key content hidden from raw crawlers.",
       "path": "skills/render-readability-audit",
       "entrypoint": false
     },
     {
+      "id": "structured-data-audit",
       "name": "structured-data-audit",
       "description": "Checks for the presence, validity, and completeness of JSON-LD schema.org markup (Organization, Product, Article, FAQPage, etc.) on a representative sample of pages.",
       "path": "skills/structured-data-audit",
       "entrypoint": false
     },
     {
+      "id": "freshness-corroboration-audit",
       "name": "freshness-corroboration-audit",
       "description": "Validates internal fact consistency (address, phone, hours, pricing) across multiple pages, and checks for dateModified / datePublished metadata signalling content freshness.",
       "path": "skills/freshness-corroboration-audit",
       "entrypoint": false
     },
     {
+      "id": "entity-clarity-audit",
       "name": "entity-clarity-audit",
       "description": "Checks for disambiguating identity signals: sameAs links to verified profiles, explicit legal/brand name, About page identity statements, and unique external identifiers (LinkedIn, Wikidata, Crunchbase).",
       "path": "skills/entity-clarity-audit",
       "entrypoint": false
     },
     {
+      "id": "engagement-audit",
       "name": "engagement-audit",
       "description": "Evaluates on-site visitor engagement signals: nav clarity, broken internal links, dead-end pages, above-fold orientation cues, breadcrumbs, and search availability.",
       "path": "skills/engagement-audit",

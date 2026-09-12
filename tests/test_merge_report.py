@@ -72,3 +72,62 @@ def test_beyond_problem_suggestions_at_least_six_in_every_report():
     assert "tl;dr" in corpus or "email" in corpus  # 5. Email-summary resilience
     assert "lastmod" in corpus or "sitemap" in corpus  # 6. Sitemap freshness signal
 
+
+def test_orchestrator_run_merges_all_workers(monkeypatch):
+    """Assert that the real orchestrator merge_report.run executes workers in parallel and merges findings."""
+    mock_workers = [
+        ("worker-crawl", "crawl.py", "worker-crawl"),
+        ("worker-schema", "schema.py", "worker-schema"),
+    ]
+    worker_findings = {
+        "worker-crawl": [
+            {
+                "title": "Blocked bot",
+                "severity": "critical",
+                "evidence": "Robots blocked",
+                "suggested_action": {
+                    "summary": "Fix robots, populated from config, because AI cannot crawl. Verify: curl -sI https://example.com/robots.txt.",
+                    "priority": "critical",
+                },
+            }
+        ],
+        "worker-schema": [
+            {
+                "title": "Missing meta",
+                "severity": "medium",
+                "evidence": "No meta",
+                "suggested_action": {
+                    "summary": "Add meta, populated from content, because summaries help search. Verify: curl -s https://example.com.",
+                    "priority": "medium",
+                },
+            }
+        ],
+    }
+
+    class MockWorker:
+        def __init__(self, findings):
+            self._findings = findings
+
+        def run(self, url):
+            return list(self._findings)
+
+    monkeypatch.setattr(merge_report, "WORKER_SKILLS", mock_workers)
+    monkeypatch.setattr(
+        merge_report,
+        "_import_worker",
+        lambda folder, script: MockWorker(worker_findings.get(folder, [])),
+    )
+
+    report = merge_report.run("https://example.com")
+    assert isinstance(report, dict)
+    assert report["site"] == "example.com"
+    assert report["summary"]["total_findings"] == 2
+    assert report["summary"]["critical"] == 1
+    assert report["summary"]["medium"] == 1
+    assert report["findings"][0]["severity"] == "critical"
+    assert report["findings"][0]["id"] == "F-001"
+    assert report["findings"][1]["severity"] == "medium"
+    assert report["findings"][1]["id"] == "F-002"
+    assert len(report["beyond_problem_suggestions"]) >= 6
+
+

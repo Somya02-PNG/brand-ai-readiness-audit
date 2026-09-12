@@ -73,7 +73,7 @@ Every `SKILL.md` was manually inspected against all four specification criteria:
   - `name`: `crawl-access-audit`
   - `description`: Explains crawl access, robots.txt inspection, HTTP status codes, and sitemap auditing.
   - `license`: `MIT`
-- [x] **Deterministic Procedure**: Evaluates robots.txt rules against 14 AI crawlers, probes HTTP status, tests redirect chains, checks sitemap.xml reachability.
+- [x] **Deterministic Procedure**: Evaluates robots.txt rules against 16 AI and search crawlers, probes HTTP status, tests redirect chains, checks sitemap.xml reachability.
 - [x] **Declared Tools**: `requests`, `urllib.robotparser`, `bs4`, `lxml`.
 - [x] **No Site-Altering Actions**: Non-destructive HTTP GET queries with polite throttling (≥0.5s delay) and max page caps.
 

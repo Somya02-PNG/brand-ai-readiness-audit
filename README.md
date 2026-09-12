@@ -20,7 +20,7 @@ The Brand AI-Readiness Audit Marketplace audits any public website to identify t
 - **Files**: `skills/audit-orchestrator/SKILL.md`, `skills/audit-orchestrator/scripts/merge_report.py`, `skills/audit-orchestrator/scripts/beyond_problem.py`
 
 ### 2. `crawl-access-audit`
-- **Concern**: AI bot crawl accessibility via root server responses, `robots.txt` disallow/allow rules evaluated against 14 recognized AI crawlers, HTTP redirect hop depths, sitemap reachability, and root `/llms.txt` discovery.
+- **Concern**: AI bot crawl accessibility via root server responses, `robots.txt` disallow/allow rules evaluated against 16 recognized AI and search crawlers, HTTP redirect hop depths, sitemap reachability, and root `/llms.txt` discovery.
 - **Inputs**: Target base URL.
 - **Outputs**: Audit findings reporting blocked AI crawlers, excessive redirect hops (>2), bot-wall 403/503 challenges, and missing or unparseable sitemap manifests.
 - **Files**: `skills/crawl-access-audit/SKILL.md`, `skills/crawl-access-audit/scripts/check_access.py`, `skills/crawl-access-audit/references/crawler-registry.md`, `skills/crawl-access-audit/references/checks.md`
@@ -202,7 +202,7 @@ pytest -q
 
 ### Test Suite Highlights
 - **Import Verification** (`test_imports.py`): Ensures all skill scripts import cleanly without missing dependencies or syntax errors.
-- **Crawler Registry Verification** (`test_crawler_registry.py`): Validates all 14 recognized AI crawlers and their respective user-agent tokens.
+- **Crawler Registry Verification** (`test_crawler_registry.py`): Validates all 16 recognized AI and search crawlers and their respective user-agent tokens.
 - **Robots Parser & Edge Cases** (`test_robots_parser.py`, `test_crawl_access.py`): Verifies RFC 9309 compliance, 404 all-allowed handling, bot-wall 403 challenge detection, and the 20-fetch cap on dense link pages.
 - **Schema & Action Compliance** (`test_schema_compliance.py`): Enforces the required JSON schema floor, ID sorting, and the action string pattern across findings.
 - **Orchestration & Merging** (`test_merge_report.py`): Tests worker aggregation, fault tolerance, and summary metric calculations.
@@ -238,7 +238,7 @@ brand-ai-readiness-audit/
 │   │   ├── SKILL.md
 │   │   ├── references/
 │   │   │   ├── checks.md                  ← Crawl access criteria & pass conditions
-│   │   │   └── crawler-registry.md        ← Registry of 14 AI crawlers & user-agents
+│   │   │   └── crawler-registry.md        ← Registry of 16 AI and search crawlers
 │   │   └── scripts/
 │   │       └── check_access.py            ← robots.txt, status codes & sitemap audit
 │   ├── render-readability-audit/          ← WORKER SKILL 2
@@ -276,7 +276,7 @@ brand-ai-readiness-audit/
     │   └── robots_partial_block.txt
     ├── test_beyond_problem.py             ← Strategic beyond-problem suggestions tests
     ├── test_crawl_access.py               ← Crawl access, bot-walls & fetch cap tests
-    ├── test_crawler_registry.py           ← 14 AI bot registry validation tests
+    ├── test_crawler_registry.py           ← 16 AI & search bot registry validation tests
     ├── test_imports.py                    ← Clean import verification for all skill scripts
     ├── test_merge_report.py               ← Aggregation, sorting & worker fallback tests
     ├── test_render_gap.py                 ← Playwright headless SSR vs. JS render gap tests
