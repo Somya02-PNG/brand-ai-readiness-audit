@@ -30,17 +30,25 @@ except ImportError as e:
         "severity": "low",
         "category": "discoverability",
         "skill_source": "crawl-access-audit",
-        "evidence": f"Required package not installed: {e}. Install with: pip install requests beautifulsoup4",
+        "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml",
-            "priority": "low"
-        }
+            "summary": (
+                "Install required python packages, "
+                "populated from PyPI via requirements.txt, "
+                "because missing audit dependencies prevent local execution of the crawler audit. "
+                "Verify: python -c 'import requests, bs4'."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation of website crawl access rules.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-MAX_PAGES = 15
+MAX_PAGES = 20
 REQUEST_TIMEOUT = 12
 CRAWL_DELAY = 0.5  # seconds between requests
 
@@ -54,11 +62,19 @@ HEADERS = {
 # AI and major search crawler user-agents to test against robots.txt
 AI_CRAWLERS = [
     ("GPTBot", "OpenAI's GPT crawler"),
+    ("OAI-SearchBot", "OpenAI Search crawler"),
     ("ChatGPT-User", "ChatGPT browsing plugin"),
-    ("Google-Extended", "Google AI training crawler"),
     ("PerplexityBot", "Perplexity AI crawler"),
+    ("Perplexity-User", "Perplexity user browsing agent"),
+    ("ClaudeBot", "Anthropic Claude crawler"),
     ("anthropic-ai", "Anthropic Claude crawler"),
+    ("Claude-Web", "Claude web fetching agent"),
+    ("Google-Extended", "Google AI training crawler"),
     ("CCBot", "Common Crawl (used by many LLM training sets)"),
+    ("Bytespider", "ByteDance AI crawler"),
+    ("Applebot-Extended", "Apple AI training crawler"),
+    ("meta-externalagent", "Meta AI external crawler"),
+    ("cohere-ai", "Cohere AI training crawler"),
     ("Omgilibot", "Webz.io AI crawler"),
     ("Googlebot", "Google Search (baseline)"),
 ]
@@ -66,6 +82,29 @@ AI_CRAWLERS = [
 # Static fallback paths to check for disallow rules if dynamic discovery fails
 STATIC_KEY_PATHS = ["/", "/products", "/blog", "/pricing", "/about", "/faq", "/shop"]
 KEY_PATHS = STATIC_KEY_PATHS
+
+# ── Robots & Sitemap Helpers ──────────────────────────────────────────────────
+
+def parse_robots_txt(robots_text: Optional[str], base_url: str = "https://example.com") -> urllib.robotparser.RobotFileParser:
+    """Parse robots.txt content into a RobotFileParser instance. Returns all-allowed parser if robots_text is None."""
+    rp = urllib.robotparser.RobotFileParser()
+    rp.set_url(f"{base_url.rstrip('/')}/robots.txt")
+    if robots_text is not None:
+        rp.parse(robots_text.splitlines())
+    else:
+        rp.allow_all = True
+    return rp
+
+
+def extract_sitemap_from_robots(robots_text: Optional[str]) -> Optional[str]:
+    """Extract sitemap URL from robots.txt content if present."""
+    if not robots_text:
+        return None
+    for line in robots_text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("sitemap:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,6 +128,9 @@ def safe_get(url: str, allow_redirects: bool = True) -> Optional[requests.Respon
             timeout=REQUEST_TIMEOUT,
             allow_redirects=allow_redirects,
         )
+        if resp is not None:
+            if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
+                resp.encoding = resp.apparent_encoding or "utf-8"
         return resp
     except Exception:
         return None
@@ -120,15 +162,32 @@ def get_redirect_chain(url: str) -> list[str]:
 
 
 def extract_internal_links(html: str, base_url: str, current_url: str) -> list[str]:
-    soup = BeautifulSoup(html, "lxml")
+    if not html:
+        return []
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+        except Exception:
+            return []
+
     links = []
+    base_netloc = urlparse(base_url).netloc
     for tag in soup.find_all("a", href=True):
-        href = tag["href"].strip()
-        if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
+        href = tag.get("href", "")
+        if not isinstance(href, str):
             continue
-        abs_url = urljoin(current_url, href).split("#")[0].rstrip("/")
-        if abs_url.startswith(base_url):
-            links.append(abs_url)
+        href = href.strip()
+        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        try:
+            abs_url = urljoin(current_url, href).split("#")[0].rstrip("/")
+            parsed_abs = urlparse(abs_url)
+            if (not parsed_abs.netloc or parsed_abs.netloc == base_netloc) and abs_url.startswith(base_url):
+                links.append(abs_url)
+        except Exception:
+            continue
     return links
 
 
@@ -196,13 +255,7 @@ def discover_key_paths(base_url: str, robots_text: Optional[str] = None) -> list
     3. Last-resort fallback to static list
     """
     # 1. First try sitemap.xml
-    sitemap_url = None
-    if robots_text:
-        for line in robots_text.splitlines():
-            stripped = line.strip()
-            if stripped.lower().startswith("sitemap:"):
-                sitemap_url = stripped.split(":", 1)[1].strip()
-                break
+    sitemap_url = extract_sitemap_from_robots(robots_text)
 
     if not sitemap_url:
         for candidate in ["/sitemap.xml", "/sitemap_index.xml", "/sitemap/sitemap.xml"]:
@@ -225,7 +278,49 @@ def discover_key_paths(base_url: str, robots_text: Optional[str] = None) -> list
     return STATIC_KEY_PATHS
 
 
-def making_finding(title, severity, evidence, action, priority=None):
+def is_botwall_or_cloudflare(resp: Optional[requests.Response]) -> bool:
+    """Detect whether a response indicates Cloudflare or bot-management blocking (403/503)."""
+    if resp is None:
+        return False
+    if resp.status_code in (403, 503):
+        server = resp.headers.get("Server", "").lower()
+        cf_ray = resp.headers.get("cf-ray", "")
+        cf_mitigated = resp.headers.get("cf-mitigated", "")
+        body_sample = (resp.text or "")[:2000].lower()
+        if "cloudflare" in server or cf_ray or cf_mitigated:
+            return True
+        if any(sig in body_sample for sig in (
+            "cloudflare", "just a moment...", "attention required",
+            "cf-browser-verification", "ddos-guard", "bot detection",
+            "access denied", "security service", "captcha", "challenge-platform"
+        )):
+            return True
+        return True
+    return False
+
+
+def make_botwall_finding(url: str, status_code: int, server: str = "Cloudflare/bot-wall") -> dict:
+    """Diagnostic finding emitted when Cloudflare or a bot-wall blocks automated access."""
+    return making_finding(
+        title="Automated access blocked — manual review needed",
+        severity="low",
+        evidence=(
+            f"Automated access blocked — manual review needed: HTTP {status_code} detected from {server} protection at {url}. "
+            "Bot management security rules may be intercepting automated crawlers."
+        ),
+        action=(
+            f"Configure bot-management and WAF firewall allowlists, populated from your CDN or Cloudflare security rules, "
+            "because strict bot-wall challenges block verified AI crawlers such as GPTBot and OAI-SearchBot from retrieving site content. "
+            f"Verify: curl -sI -A 'GPTBot' {url} | grep -E 'HTTP/|cf-ray'."
+        ),
+        priority="low",
+        mechanism="Cloudflare and WAF bot-walls intercept automated user-agents with 403/503 challenges, preventing AI search indexing.",
+        fix_effort="medium",
+        verification=f"curl -sI -A 'GPTBot' {url}",
+    )
+
+
+def making_finding(title, severity, evidence, action, priority=None, mechanism=None, fix_effort=None, verification=None):
     return {
         "title": title,
         "severity": severity,
@@ -236,6 +331,9 @@ def making_finding(title, severity, evidence, action, priority=None):
             "summary": action,
             "priority": priority or severity,
         },
+        "mechanism": mechanism or "Search and AI crawlers cannot index, parse, or cite content that is blocked by HTTP errors or robots.txt directives.",
+        "fix_effort": fix_effort or ("medium" if severity in ("critical", "high") else "low"),
+        "verification": verification or "curl -sI <base_url>/robots.txt",
     }
 
 # ── Check functions ────────────────────────────────────────────────────────────
@@ -245,26 +343,35 @@ def audit_robots(base_url: str) -> tuple[list[dict], Optional[urllib.robotparser
     robots_url = f"{base_url}/robots.txt"
     resp = safe_get(robots_url)
 
+    if resp is not None and is_botwall_or_cloudflare(resp):
+        findings.append(make_botwall_finding(
+            robots_url,
+            resp.status_code,
+            resp.headers.get("Server", "Cloudflare/bot-wall"),
+        ))
+
     if resp is None or resp.status_code != 200:
-        status = resp.status_code if resp else "connection error"
+        status = f"HTTP {resp.status_code}" if resp else "connection error"
+        rp = parse_robots_txt(None, base_url)
         findings.append(making_finding(
             title="robots.txt not found or unreachable",
             severity="medium",
             evidence=(
-                f"GET {robots_url} returned status {status}. "
-                "Without a robots.txt, crawlers may apply conservative default policies."
+                f"GET {robots_url} returned status {status} (treated as all allowed per crawler standards: no disallow rules apply). "
+                "Without an explicit robots.txt, crawlers may apply conservative default policies."
             ),
             action=(
-                "Create a robots.txt at the root of your domain. "
-                "Explicitly allow all crawlers with 'User-agent: *\\nAllow: /' "
-                "to signal openness to AI and search indexers."
+                f"Create a robots.txt file, populated from your domain root server configuration with 'User-agent: *\\nAllow: /', "
+                "because AI crawlers such as GPTBot and PerplexityBot default to conservative crawl policies or skip sites when "
+                f"robots.txt is unreachable. Verify: curl -sI {robots_url} | grep -E 'HTTP/|200'."
             ),
+            mechanism="Unreachable robots.txt causes AI indexers to apply cautious crawl restrictions or completely avoid indexing.",
+            fix_effort="low",
+            verification=f"curl -sI {robots_url}",
         ))
-        return findings, None
+        return findings, rp
 
-    rp = urllib.robotparser.RobotFileParser()
-    rp.set_url(robots_url)
-    rp.parse(resp.text.splitlines())
+    rp = parse_robots_txt(resp.text, base_url)
 
     key_paths = discover_key_paths(base_url, robots_text=resp.text if resp else None)
 
@@ -299,10 +406,13 @@ def audit_robots(base_url: str) -> tuple[list[dict], Optional[urllib.robotparser
                 f"from accessing: {', '.join(all_blocked_paths)}."
             ),
             action=(
-                f"Review the Disallow rules in robots.txt for the blocked AI crawlers ({', '.join(bot_names)}). "
-                "If you want AI assistants to cite and summarize your content, remove or narrow these rules to allow "
-                "access to key public pages, or add compensating Allow directives."
+                f"Remove or narrow Disallow rules in robots.txt, populated from your domain root server configuration to allow key paths ({', '.join(all_blocked_paths[:3])}), "
+                f"because AI search crawlers ({', '.join(bot_names[:3])}) strictly respect robots.txt and will completely exclude disallowed pages from citations. "
+                f"Verify: curl -s {base_url}/robots.txt | grep -iE 'User-agent|Disallow'."
             ),
+            mechanism="Explicit robots.txt disallow rules prohibit AI models and assistant crawlers from fetching, parsing, and citing content.",
+            fix_effort="low",
+            verification=f"curl -s {base_url}/robots.txt",
         ))
 
     return findings, rp
@@ -314,17 +424,10 @@ def audit_sitemap(base_url: str, rp: Optional[urllib.robotparser.RobotFileParser
 
     # 1. Check robots.txt Sitemap directive
     if rp:
-        for line in (rp.entries or []):
-            pass  # robotparser doesn't expose Sitemap directives cleanly
-        # Re-parse raw robots.txt for Sitemap directive
         robots_url = f"{base_url}/robots.txt"
         resp = safe_get(robots_url)
         if resp and resp.status_code == 200:
-            for line in resp.text.splitlines():
-                stripped = line.strip()
-                if stripped.lower().startswith("sitemap:"):
-                    sitemap_url = stripped.split(":", 1)[1].strip()
-                    break
+            sitemap_url = extract_sitemap_from_robots(resp.text)
 
     # 2. Fallback to common paths
     if not sitemap_url:
@@ -345,10 +448,13 @@ def audit_sitemap(base_url: str, rp: Optional[urllib.robotparser.RobotFileParser
                 "Without a sitemap, AI crawlers must rely entirely on link discovery."
             ),
             action=(
-                "Generate an XML sitemap and host it at /sitemap.xml. "
-                "Declare it in robots.txt with 'Sitemap: https://yourdomain.com/sitemap.xml'. "
-                "Submit it to Google Search Console and Bing Webmaster Tools."
+                f"Generate an XML sitemap at /sitemap.xml and declare it in robots.txt, populated from your CMS or build routing table, "
+                "because AI crawlers operating under crawl depth limits rely on sitemaps to discover deep authoritative URLs. "
+                f"Verify: curl -sI {base_url}/sitemap.xml | grep 'HTTP/'."
             ),
+            mechanism="Without a discoverable sitemap, AI indexers fail to uncover deep product, article, and reference pages.",
+            fix_effort="medium",
+            verification=f"curl -sI {base_url}/sitemap.xml",
         ))
     return findings
 
@@ -378,9 +484,13 @@ def audit_llms_txt(base_url: str) -> list[dict]:
                 "a curated, structured markdown summary of their content and documentation for LLMs."
             ),
             action=(
-                "Publish an /llms.txt file at your site root summarizing key pages, products, "
-                "and core facts in clean Markdown format to optimize consumption by AI assistants."
+                f"Publish an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, "
+                "because emerging AI reasoning agents consume /llms.txt as an optimized digest of site capabilities without crawling overhead. "
+                f"Verify: curl -sI {llms_url} | grep 'HTTP/'."
             ),
+            mechanism="Absence of an /llms.txt file deprives LLM agents of a lightweight, standardized summary of brand offerings.",
+            fix_effort="low",
+            verification=f"curl -sI {llms_url}",
         ))
 
     return findings
@@ -393,7 +503,7 @@ def audit_http_status(start_url: str, base_url: str) -> list[dict]:
     page_statuses = []
     redirect_issues = []
 
-    while queue and len(visited) <= MAX_PAGES:
+    while queue and len(page_statuses) < MAX_PAGES:
         url = queue.popleft()
         time.sleep(CRAWL_DELAY)
 
@@ -414,10 +524,38 @@ def audit_http_status(start_url: str, base_url: str) -> list[dict]:
 
         page_statuses.append((url, resp.status_code, ""))
 
+        # Check for Cloudflare / bot-wall blocking
+        if is_botwall_or_cloudflare(resp):
+            if not any(f["title"] == "Automated access blocked — manual review needed" for f in findings):
+                findings.append(make_botwall_finding(
+                    url,
+                    resp.status_code,
+                    resp.headers.get("Server", "Cloudflare/bot-wall"),
+                ))
+
         if resp.status_code == 200:
             links = extract_internal_links(resp.text, base_url, url)
+            if len(links) > 100:
+                if not any(f["title"].startswith("High internal link count") for f in findings):
+                    findings.append(making_finding(
+                        title="High internal link count (>100 links) — crawl capped at 20 fetches",
+                        severity="low",
+                        evidence=(
+                            f"Page at {url} contains {len(links)} internal links (>100 links detected); "
+                            "link fetches were capped at 20 to prevent excessive crawl load."
+                        ),
+                        action=(
+                            f"Review navigation and link architecture on high-link pages, populated from page templates, "
+                            "because dense pages with over 100 links can dilute PageRank and exhaust AI crawler budget. "
+                            f"Verify: curl -s {url} | grep -c '<a '."
+                        ),
+                        priority="low",
+                        mechanism="Pages with over 100 links dilute crawl budget and link equity, causing AI crawlers to truncate discovery before indexing deeper content.",
+                        fix_effort="low",
+                        verification=f"curl -s {url} | grep -c '<a '",
+                    ))
             for link in links:
-                if link not in visited:
+                if link not in visited and len(visited) < MAX_PAGES:
                     visited.add(link)
                     queue.append(link)
 
@@ -428,7 +566,14 @@ def audit_http_status(start_url: str, base_url: str) -> list[dict]:
             title=f"Homepage returns HTTP {homepage_status}",
             severity="critical",
             evidence=f"GET {start_url} returned HTTP {homepage_status}. AI crawlers cannot index a site with a non-successful homepage.",
-            action=f"Investigate the server error returning HTTP {homepage_status} at {start_url}. Ensure the homepage returns HTTP 200.",
+            action=(
+                f"Fix the web server response code for the homepage, populated from your reverse proxy or web host routing configuration, "
+                "because AI crawlers abort crawling when the root landing page returns an error or non-200 status. "
+                f"Verify: curl -sI {start_url} | grep 'HTTP/'."
+            ),
+            mechanism="Non-successful HTTP status codes on the homepage halt AI bot exploration and lead to complete exclusion from citations.",
+            fix_effort="medium",
+            verification=f"curl -sI {start_url}",
         ))
 
     # Findings: redirect chains
@@ -441,9 +586,13 @@ def audit_http_status(start_url: str, base_url: str) -> list[dict]:
                 f"Chain: {' → '.join(str(x) for x in ri['chain'][:4])}."
             ),
             action=(
-                "Consolidate redirect chains to a single hop (original → canonical). "
-                "Each extra hop adds latency and risks crawler timeouts."
+                f"Consolidate redirect rules to point directly to the canonical target URL, populated from your web server redirect configuration, "
+                "because redirect chains greater than 2 hops trigger crawler timeout limits and waste crawl budget. "
+                f"Verify: curl -sIL {ri['url']} | grep -E 'HTTP/|Location:'."
             ),
+            mechanism="Excessive redirect hops increase fetch latency and trigger crawler abort thresholds before content is indexed.",
+            fix_effort="low",
+            verification=f"curl -sIL {ri['url']}",
         ))
 
     return findings, page_statuses
@@ -480,9 +629,16 @@ def run(url: str) -> list[dict]:
             "skill_source": "crawl-access-audit",
             "evidence": f"Unhandled exception: {type(exc).__name__}: {exc}",
             "suggested_action": {
-                "summary": "Re-run the audit. If the error persists, check network connectivity.",
+                "summary": (
+                    f"Review network connectivity and server permissions for {url}, populated from host infrastructure logs, "
+                    "because intermittent network dropouts prevent AI crawlers from fetching page resources. "
+                    f"Verify: python skills/crawl-access-audit/scripts/check_access.py {url}."
+                ),
                 "priority": "low",
             },
+            "mechanism": "Unhandled network or runtime errors prevent automated audit analysis and crawler page retrieval.",
+            "fix_effort": "low",
+            "verification": f"python skills/crawl-access-audit/scripts/check_access.py {url}",
         })
 
     return findings

@@ -32,9 +32,17 @@ except ImportError as e:
         "skill_source": "engagement-audit",
         "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml",
-            "priority": "low"
-        }
+            "summary": (
+                "Install required python packages, "
+                "populated from PyPI via requirements.txt, "
+                "because missing audit dependencies prevent local execution of the engagement audit. "
+                "Verify: python -c 'import requests, bs4'."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation of site navigation and user engagement paths.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
@@ -200,7 +208,7 @@ def count_outbound_internal(html: str, base_url: str, current_url: str) -> int:
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
-def make_finding(title, severity, evidence, action):
+def make_finding(title, severity, evidence, action, mechanism=None, fix_effort=None, verification=None):
     return {
         "title": title,
         "severity": severity,
@@ -211,6 +219,9 @@ def make_finding(title, severity, evidence, action):
             "summary": action,
             "priority": severity,
         },
+        "mechanism": mechanism or "Navigation and layout friction prevents visitors arriving from AI assistant citations from engaging or converting.",
+        "fix_effort": fix_effort or ("medium" if severity in ("critical", "high") else "low"),
+        "verification": verification or "curl -sI <url>",
     }
 
 # ── Main audit logic ───────────────────────────────────────────────────────────
@@ -287,10 +298,13 @@ def run(url: str) -> list[dict]:
                 f"Sample broken URLs: {'; '.join(broken_sample)}."
             ),
             action=(
-                "Set up 301 redirects for moved content. Delete or update links to removed pages. "
-                "Add a link-checking step to your CI/CD pipeline (e.g., lychee, broken-link-checker). "
-                "Configure your CMS to warn editors when linking to non-existent pages."
+                "Implement 301 redirects or update href attributes for broken targets, populated from your server routing table or CMS content editor, "
+                "because broken internal links dead-end AI crawler discovery loops and destroy conversion when referred visitors land on HTTP 404 pages. "
+                "Verify: curl -sI <broken_url> returns HTTP 200 or 301."
             ),
+            mechanism="Broken internal links strand visitors referred by AI assistants and waste crawler traversal budget.",
+            fix_effort="medium",
+            verification="curl -sI <broken_url>",
         ))
 
     # ── Phase 3: Dead-end pages ───────────────────────────────────────────────
@@ -306,10 +320,13 @@ def run(url: str) -> list[dict]:
                 "Dead-end pages trap visitors with no path forward, increasing bounce rate."
             ),
             action=(
-                "Add navigation links, related content sections, or CTAs to every page. "
-                "Minimum: a link back to the section index or homepage. "
-                "Consider adding a 'Related articles' or 'You might also like' section."
+                "Add contextual navigation links and related content modules, populated from your site template components or related article feeds, "
+                "because dead-end pages offer no forward pathways, causing visitors and crawlers to bounce immediately. "
+                "Verify: curl -s <dead_end_url> | grep -c '<a href=' shows > 3 outbound links."
             ),
+            mechanism="Pages lacking outbound links terminate visitor exploration sessions and prevent AI crawlers from continuing traversals.",
+            fix_effort="low",
+            verification="curl -s <dead_end_url> | grep -c '<a href='",
         ))
 
     # ── Phase 4: Navigation depth (homepage) ──────────────────────────────────
@@ -328,9 +345,13 @@ def run(url: str) -> list[dict]:
                     "AI parsers cannot identify the site's navigation structure."
                 ),
                 action=(
-                    "Wrap your main navigation in a <nav> element with aria-label='Main navigation'. "
-                    "This is both an accessibility and SEO best practice."
+                    f"Wrap primary site navigation links in a semantic <nav aria-label='Main navigation'> element, populated from your header template layout, "
+                    "because AI parser agents rely on semantic HTML5 landmarks to distinguish main navigational hierarchies from page body text. "
+                    f"Verify: curl -s {url} | grep -i '<nav'."
                 ),
+                mechanism="Absence of semantic navigation elements hinders AI screen readers and bots from identifying site structure.",
+                fix_effort="low",
+                verification=f"curl -s {url} | grep -i '<nav'",
             ))
         elif nav_depth > 3:
             findings.append(make_finding(
@@ -342,9 +363,13 @@ def run(url: str) -> list[dict]:
                     "AI models to parse as a site structure signal."
                 ),
                 action=(
-                    "Flatten navigation to a maximum of 3 levels. "
-                    "Move rarely-used deep links to footer or secondary navigation."
+                    f"Flatten menu hierarchies to a maximum of 3 levels, populated from your navigation configuration or taxonomy manager, "
+                    "because deep multi-tier menus overwhelm human users and exceed AI model link-extraction heuristics. "
+                    f"Verify: curl -s {url} shows no <ul> nested deeper than 3 levels."
                 ),
+                mechanism="Overly deep navigation structures impede efficient bot traversal and user category discovery.",
+                fix_effort="medium",
+                verification=f"curl -s {url} | grep -c '<ul'",
             ))
 
         # ── Phase 5: Above-fold orientation ──────────────────────────────────
@@ -359,10 +384,13 @@ def run(url: str) -> list[dict]:
                     "within the first few seconds."
                 ),
                 action=(
-                    "Add a single, descriptive <h1> to the homepage that clearly states what the brand does "
-                    "(e.g., 'AI-Powered Inventory Management for E-Commerce Brands'). "
-                    "Keep it under 70 characters and make it human-scannable."
+                    f"Add a clear, descriptive <h1> heading above the fold, populated from brand positioning copy in the homepage hero section, "
+                    "because AI answer extractors look for <h1> as the primary topic definition of the entire domain. "
+                    f"Verify: curl -s {url} | grep -i '<h1'."
                 ),
+                mechanism="Missing H1 headings prevent AI summarizers from rapidly determining the core purpose and value proposition of the site.",
+                fix_effort="low",
+                verification=f"curl -s {url} | grep -i '<h1'",
             ))
 
         has_cta = detect_above_fold_cta(pages_html[url])
@@ -376,10 +404,13 @@ def run(url: str) -> list[dict]:
                     "Visitors arriving from AI assistant recommendations need an immediate next action."
                 ),
                 action=(
-                    "Place a prominent CTA button/link in the hero section of the homepage. "
-                    "Use action-oriented text (e.g., 'Start Free Trial', 'Get a Demo', 'Shop Now'). "
-                    "Ensure it's visible without scrolling on desktop (above ~700px)."
+                    f"Insert a prominent CTA button in the hero area, populated from your primary conversion goal (e.g. 'Get Started', 'Start Free Trial'), "
+                    "because users arriving from AI recommendations need an immediate conversion pathway without scrolling. "
+                    f"Verify: curl -s {url} contains an above-fold button or link with action text."
                 ),
+                mechanism="Absence of above-the-fold calls-to-action reduces user engagement and conversion from AI-directed traffic.",
+                fix_effort="low",
+                verification=f"curl -s {url} | grep -iE 'btn|button|cta'",
             ))
 
         # ── Phase 6: Wayfinding elements ──────────────────────────────────────
@@ -407,10 +438,13 @@ def run(url: str) -> list[dict]:
                         "Breadcrumbs help visitors orient themselves and reduce bounce rate."
                     ),
                     action=(
-                        "Add breadcrumb navigation to all non-homepage pages. "
-                        "Also add BreadcrumbList JSON-LD for AI and search engine context. "
-                        "Example: Home > Category > Product Name."
+                        "Deploy breadcrumb navigation with BreadcrumbList JSON-LD, populated from your page hierarchy or CMS breadcrumb module, "
+                        "because breadcrumb trails convey parent-child relationships essential for AI deep-link citations. "
+                        "Verify: curl -s <subpage_url> | grep -i 'breadcrumb'."
                     ),
+                    mechanism="Missing breadcrumbs obscure hierarchical site context for search indexers and increase page bounce rates.",
+                    fix_effort="medium",
+                    verification="curl -s <subpage_url> | grep -i 'breadcrumb'",
                 ))
 
             if not search_found:
@@ -423,10 +457,13 @@ def run(url: str) -> list[dict]:
                         "and can't search are likely to leave."
                     ),
                     action=(
-                        "Add a site search to your header or navigation. "
-                        "Options: native CMS search, Algolia, or Google Custom Search Engine. "
-                        "Use <input type='search'> and wrap in <form role='search'> for semantic markup."
+                        f"Add an accessible site search form with <input type='search'>, populated from your header navigation or search index backend, "
+                        "because visitors who fail to immediately locate specific brand facts rely on search before bouncing. "
+                        f"Verify: curl -s {url} | grep -i 'type=\"search\"'."
                     ),
+                    mechanism="Without site search, visitors referred by AI assistants with specific queries quickly abandon the site.",
+                    fix_effort="medium",
+                    verification=f"curl -s {url} | grep -i 'type=\"search\"'",
                 ))
 
     return findings

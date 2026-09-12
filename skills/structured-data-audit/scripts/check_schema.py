@@ -31,9 +31,12 @@ except ImportError as e:
         "skill_source": "structured-data-audit",
         "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml extruct",
+            "summary": "Install required python packages, populated from PyPI via requirements.txt, because missing audit dependencies prevent local validation of schema.org markup. Verify: python -c 'import requests, bs4'.",
             "priority": "low"
-        }
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation and validation of structured data.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
@@ -96,6 +99,28 @@ RECOMMENDED_PROPS: dict[str, list[str]] = {
     "Article": ["image", "description"],
     "FAQPage": [],
 }
+
+# ── Making findings ───────────────────────────────────────────────────────────
+
+def make_finding(title, severity, evidence, action, mechanism=None, fix_effort="medium", verification=None):
+    if mechanism is None:
+        mechanism = "AI search engines rely on valid, complete schema.org JSON-LD to understand and cite page content."
+    if verification is None:
+        verification = "curl -s <url> | grep -i 'application/ld+json'"
+    return {
+        "title": title,
+        "severity": severity,
+        "category": "discoverability",
+        "skill_source": "structured-data-audit",
+        "evidence": evidence,
+        "suggested_action": {
+            "summary": action,
+            "priority": severity,
+        },
+        "mechanism": mechanism,
+        "fix_effort": fix_effort,
+        "verification": verification,
+    }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -267,47 +292,46 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
     path = urlparse(page_url).path or "/"
 
     if missing_required:
-        findings.append({
-            "title": f"{schema_type} JSON-LD missing required properties on {path}",
-            "severity": "high",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": (
+        findings.append(make_finding(
+            title=f"{schema_type} JSON-LD missing required properties on {path}",
+            severity="high",
+            evidence=(
                 f"Page: {page_url}. "
                 f"Found {schema_type} JSON-LD block but missing required fields: "
                 f"{', '.join(missing_required)}. "
                 f"Present fields: {', '.join(k for k in entity.keys() if not k.startswith('@'))}."
             ),
-            "suggested_action": {
-                "summary": (
-                    f"Add the following required properties to your {schema_type} JSON-LD: "
-                    f"{', '.join(missing_required)}. "
-                    "See schema.org/{schema_type} for full spec."
-                ).replace("{schema_type}", schema_type),
-                "priority": "high",
-            },
-        })
+            action=(
+                f"Add missing required properties ({', '.join(missing_required)}) to {schema_type} JSON-LD, "
+                f"populated from server-rendered page data according to schema.org/{schema_type}, "
+                f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                f"Verify: curl -s <url> | grep -i '{missing_required[0]}'."
+            ),
+            mechanism=f"AI search engines discard or invalidate {schema_type} entities when required schema.org properties are missing.",
+            fix_effort="medium",
+            verification=f"curl -s <url> | grep -i '{missing_required[0]}'",
+        ))
 
     if missing_recommended and not missing_required:
-        findings.append({
-            "title": f"{schema_type} JSON-LD missing high-value recommended properties on {path}",
-            "severity": "medium",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": (
+        findings.append(make_finding(
+            title=f"{schema_type} JSON-LD missing high-value recommended properties on {path}",
+            severity="medium",
+            evidence=(
                 f"Page: {page_url}. "
                 f"{schema_type} JSON-LD present and required fields satisfied, but missing "
                 f"recommended fields: {', '.join(missing_recommended)}. "
                 "These fields significantly improve AI citation quality."
             ),
-            "suggested_action": {
-                "summary": (
-                    f"Add recommended properties to {schema_type} JSON-LD: "
-                    f"{', '.join(missing_recommended)}."
-                ),
-                "priority": "medium",
-            },
-        })
+            action=(
+                f"Add recommended properties ({', '.join(missing_recommended)}) to {schema_type} JSON-LD, "
+                "populated from authoritative entity attributes and CMS metadata, "
+                "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
+                f"Verify: curl -s <url> | grep -i '{missing_recommended[0]}'."
+            ),
+            mechanism=f"Omitting recommended {schema_type} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+            fix_effort="medium",
+            verification=f"curl -s <url> | grep -i '{missing_recommended[0]}'",
+        ))
 
     # Product-specific: validate offers object
     if schema_type == "Product" and entity.get("offers"):
@@ -315,39 +339,42 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
         if isinstance(offers, dict):
             offer_missing = [p for p in ["price", "priceCurrency", "availability"] if not offers.get(p)]
             if offer_missing:
-                findings.append({
-                    "title": f"Product Offer object missing properties on {path}",
-                    "severity": "high",
-                    "category": "discoverability",
-                    "skill_source": "structured-data-audit",
-                    "evidence": (
+                findings.append(make_finding(
+                    title=f"Product Offer object missing properties on {path}",
+                    severity="high",
+                    evidence=(
                         f"Page: {page_url}. "
                         f"Product JSON-LD has 'offers' object but missing: {', '.join(offer_missing)}."
                     ),
-                    "suggested_action": {
-                        "summary": (
-                            f"Add to the offers object: {', '.join(offer_missing)}. "
-                            "Use priceCurrency: 'USD' (ISO 4217) and availability: 'https://schema.org/InStock'."
-                        ),
-                        "priority": "high",
-                    },
-                })
+                    action=(
+                        f"Add missing Offer properties ({', '.join(offer_missing)}) to Product JSON-LD, "
+                        "populated from backend pricing and inventory systems, "
+                        "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                        "Verify: curl -s <url> | grep -E 'price|availability'."
+                    ),
+                    mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                    fix_effort="low",
+                    verification="curl -s <url> | grep -E 'price|availability'",
+                ))
 
     # FAQPage: validate mainEntity
     if schema_type == "FAQPage":
         main_entity = entity.get("mainEntity", [])
         if not isinstance(main_entity, list) or len(main_entity) == 0:
-            findings.append({
-                "title": f"FAQPage mainEntity is empty or invalid on {path}",
-                "severity": "high",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": f"Page: {page_url}. FAQPage JSON-LD has no items in mainEntity.",
-                "suggested_action": {
-                    "summary": "Populate mainEntity with Question objects each having name and acceptedAnswer.",
-                    "priority": "high",
-                },
-            })
+            findings.append(make_finding(
+                title=f"FAQPage mainEntity is empty or invalid on {path}",
+                severity="high",
+                evidence=f"Page: {page_url}. FAQPage JSON-LD has no items in mainEntity.",
+                action=(
+                    "Populate the mainEntity array in FAQPage JSON-LD with Question and Answer objects, "
+                    "populated from server-rendered FAQ Q&A content on the page, "
+                    "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                    "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
+                ),
+                mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+                fix_effort="medium",
+                verification="curl -s <url> | grep -i 'acceptedAnswer'",
+            ))
 
     return findings
 
@@ -373,17 +400,20 @@ def run(url: str) -> list[dict]:
     try:
         pages = discover_pages(url, base_url)
     except Exception as exc:
-        return [{
-            "title": "structured-data-audit page discovery failed",
-            "severity": "low",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": f"Could not crawl pages: {exc}",
-            "suggested_action": {
-                "summary": "Check network connectivity.",
-                "priority": "low",
-            },
-        }]
+        return [make_finding(
+            title="structured-data-audit page discovery failed",
+            severity="low",
+            evidence=f"Could not crawl pages: {exc}",
+            action=(
+                "Restore website reachability and verify crawler permissions, "
+                "populated from web server configurations and network firewalls, "
+                "because AI crawlers cannot inspect structured data markup when site pages cannot be crawled. "
+                "Verify: curl -ILs <url> returns HTTP 200."
+            ),
+            mechanism="AI crawlers cannot inspect or parse structured data when HTTP requests fail.",
+            fix_effort="low",
+            verification="curl -ILs <url>",
+        )]
 
     pages_with_jsonld = 0
     pages_without_jsonld = []
@@ -414,25 +444,24 @@ def run(url: str) -> list[dict]:
         # Check for malformed JSON
         for block in blocks:
             if block["error"]:
-                findings.append({
-                    "title": f"Malformed JSON-LD on {urlparse(page_url).path or '/'}",
-                    "severity": "high",
-                    "category": "discoverability",
-                    "skill_source": "structured-data-audit",
-                    "evidence": (
+                findings.append(make_finding(
+                    title=f"Malformed JSON-LD on {urlparse(page_url).path or '/'}",
+                    severity="high",
+                    evidence=(
                         f"Page: {page_url}. "
                         f"JSON-LD block failed to parse: {block['error']}. "
                         f"Snippet: {block['raw'][:150]}..."
                     ),
-                    "suggested_action": {
-                        "summary": (
-                            "Fix the JSON syntax error in the JSON-LD block. "
-                            "Validate with Google's Rich Results Test: "
-                            "https://search.google.com/test/rich-results"
-                        ),
-                        "priority": "high",
-                    },
-                })
+                    action=(
+                        "Fix JSON syntax errors in the ld+json script tag, "
+                        "populated from valid JSON serialized in server-side page templates, "
+                        "because AI crawlers abort parsing on JSON syntax errors and treat the entire schema block as nonexistent. "
+                        "Verify: curl -s <url> | grep -A 20 'application/ld+json' | python -m json.tool."
+                    ),
+                    mechanism="AI crawlers abort parsing on JSON syntax errors and fail to extract any entities from the script block.",
+                    fix_effort="low",
+                    verification="curl -s <url> | grep -A 20 'application/ld+json' | python -m json.tool",
+                ))
 
         valid_blocks = [b for b in blocks if b["data"] is not None]
         if valid_blocks:
@@ -522,234 +551,243 @@ def run(url: str) -> list[dict]:
             evidence_lines.append(f"- {item['url']} (context: '{ctx_val}')")
         evidence_lines.append("Expected '@context': 'https://schema.org'.")
 
-        findings.append({
-            "title": f"JSON-LD @context is not schema.org across {len(context_issues)} pages",
-            "severity": "medium",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": "\n".join(evidence_lines),
-            "suggested_action": {
-                "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks across all pages.",
-                "priority": "medium",
-            },
-        })
+        findings.append(make_finding(
+            title=f"JSON-LD @context is not schema.org across {len(context_issues)} pages",
+            severity="medium",
+            evidence="\n".join(evidence_lines),
+            action=(
+                "Set @context to 'https://schema.org' across all JSON-LD blocks, "
+                "populated from global schema template constants, "
+                "because AI parsers require the canonical schema.org context vocabulary to resolve linked data types. "
+                "Verify: curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'."
+            ),
+            mechanism="AI parsers require the canonical schema.org context URI to interpret semantic types correctly.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'",
+        ))
     elif len(context_issues) == 1:
         item = context_issues[0]
         ctx_val = item["context"] or "(empty string)"
-        findings.append({
-            "title": f"JSON-LD @context is not schema.org on {urlparse(item['url']).path or '/'}",
-            "severity": "medium",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": f"Page: {item['url']}. @context value: '{ctx_val}'. Expected 'https://schema.org'.",
-            "suggested_action": {
-                "summary": "Set @context to 'https://schema.org' in all JSON-LD blocks.",
-                "priority": "medium",
-            },
-        })
+        findings.append(make_finding(
+            title=f"JSON-LD @context is not schema.org on {urlparse(item['url']).path or '/'}",
+            severity="medium",
+            evidence=f"Page: {item['url']}. @context value: '{ctx_val}'. Expected 'https://schema.org'.",
+            action=(
+                "Set @context to 'https://schema.org' in the page JSON-LD block, "
+                "populated from global schema template constants, "
+                "because AI parsers require the canonical schema.org context vocabulary to resolve linked data types. "
+                "Verify: curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'."
+            ),
+            mechanism="AI parsers require the canonical schema.org context URI to interpret semantic types correctly.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'",
+        ))
 
     # Consolidate missing required property findings across pages
     for (type_label, missing_props), items in missing_required_issues.items():
         primary_type = type_label.split("/")[0]
         if len(items) > 2:
             page_urls = [it["page_url"] for it in items]
-            findings.append({
-                "title": f"{type_label} JSON-LD missing required properties across {len(items)} pages",
-                "severity": "high",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": (
+            findings.append(make_finding(
+                title=f"{type_label} JSON-LD missing required properties across {len(items)} pages",
+                severity="high",
+                evidence=(
                     f"Found {type_label} JSON-LD blocks missing required fields: "
                     f"{', '.join(missing_props)} across {len(items)} pages: "
                     f"{', '.join(page_urls)}."
                 ),
-                "suggested_action": {
-                    "summary": (
-                        f"Add the following required properties to your {type_label} JSON-LD across affected pages: "
-                        f"{', '.join(missing_props)}. "
-                        f"See schema.org/{primary_type} for full spec."
-                    ),
-                    "priority": "high",
-                },
-            })
+                action=(
+                    f"Add required properties ({', '.join(missing_props)}) to {type_label} JSON-LD templates, "
+                    f"populated from server-rendered CMS data according to schema.org/{primary_type}, "
+                    f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                    f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
+                ),
+                mechanism=f"AI search engines discard or invalidate {type_label} entities when required schema.org properties are missing.",
+                fix_effort="medium",
+                verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
+            ))
         else:
             for it in items:
-                findings.append({
-                    "title": f"{type_label} JSON-LD missing required properties on {it['path']}",
-                    "severity": "high",
-                    "category": "discoverability",
-                    "skill_source": "structured-data-audit",
-                    "evidence": (
+                findings.append(make_finding(
+                    title=f"{type_label} JSON-LD missing required properties on {it['path']}",
+                    severity="high",
+                    evidence=(
                         f"Page: {it['page_url']}. "
                         f"Found {type_label} JSON-LD block but missing required fields: "
                         f"{', '.join(missing_props)}. "
                         f"Present fields: {', '.join(it['present_fields'])}."
                     ),
-                    "suggested_action": {
-                        "summary": (
-                            f"Add the following required properties to your {type_label} JSON-LD: "
-                            f"{', '.join(missing_props)}. "
-                            f"See schema.org/{primary_type} for full spec."
-                        ),
-                        "priority": "high",
-                    },
-                })
+                    action=(
+                        f"Add required properties ({', '.join(missing_props)}) to {type_label} JSON-LD, "
+                        f"populated from server-rendered page data according to schema.org/{primary_type}, "
+                        f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                        f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
+                    ),
+                    mechanism=f"AI search engines discard or invalidate {type_label} entities when required schema.org properties are missing.",
+                    fix_effort="medium",
+                    verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
+                ))
 
     # Consolidate missing recommended property findings across pages
     for (type_label, missing_props), items in missing_rec_issues.items():
         if len(items) > 2:
             page_urls = [it["page_url"] for it in items]
-            findings.append({
-                "title": f"{type_label} JSON-LD missing high-value recommended properties across {len(items)} pages",
-                "severity": "medium",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": (
+            findings.append(make_finding(
+                title=f"{type_label} JSON-LD missing high-value recommended properties across {len(items)} pages",
+                severity="medium",
+                evidence=(
                     f"{type_label} JSON-LD present across {len(items)} pages but missing recommended fields: "
                     f"{', '.join(missing_props)}: {', '.join(page_urls)}. "
                     "These fields significantly improve AI citation quality."
                 ),
-                "suggested_action": {
-                    "summary": (
-                        f"Add recommended properties to {type_label} JSON-LD across affected pages: "
-                        f"{', '.join(missing_props)}."
-                    ),
-                    "priority": "medium",
-                },
-            })
+                action=(
+                    f"Add recommended properties ({', '.join(missing_props)}) to {type_label} JSON-LD templates, "
+                    "populated from authoritative entity attributes and CMS metadata, "
+                    "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
+                    f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
+                ),
+                mechanism=f"Omitting recommended {type_label} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+                fix_effort="medium",
+                verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
+            ))
         else:
             for it in items:
-                findings.append({
-                    "title": f"{type_label} JSON-LD missing high-value recommended properties on {it['path']}",
-                    "severity": "medium",
-                    "category": "discoverability",
-                    "skill_source": "structured-data-audit",
-                    "evidence": (
+                findings.append(make_finding(
+                    title=f"{type_label} JSON-LD missing high-value recommended properties on {it['path']}",
+                    severity="medium",
+                    evidence=(
                         f"Page: {it['page_url']}. "
                         f"{type_label} JSON-LD present and required fields satisfied, but missing "
                         f"recommended fields: {', '.join(missing_props)}. "
                         "These fields significantly improve AI citation quality."
                     ),
-                    "suggested_action": {
-                        "summary": (
-                            f"Add recommended properties to {type_label} JSON-LD: "
-                            f"{', '.join(missing_props)}."
-                        ),
-                        "priority": "medium",
-                    },
-                })
+                    action=(
+                        f"Add recommended properties ({', '.join(missing_props)}) to {type_label} JSON-LD, "
+                        "populated from authoritative entity attributes and CMS metadata, "
+                        "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
+                        f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
+                    ),
+                    mechanism=f"Omitting recommended {type_label} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+                    fix_effort="medium",
+                    verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
+                ))
 
     # Product offer issues
     for missing_props, items in offer_issues.items():
         if len(items) > 2:
             page_urls = [it["page_url"] for it in items]
-            findings.append({
-                "title": f"Product Offer object missing properties across {len(items)} pages",
-                "severity": "high",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": (
+            findings.append(make_finding(
+                title=f"Product Offer object missing properties across {len(items)} pages",
+                severity="high",
+                evidence=(
                     f"Product JSON-LD has 'offers' object but missing {', '.join(missing_props)} "
                     f"across {len(items)} pages: {', '.join(page_urls)}."
                 ),
-                "suggested_action": {
-                    "summary": (
-                        f"Add to the offers object: {', '.join(missing_props)}. "
-                        "Use priceCurrency: 'USD' (ISO 4217) and availability: 'https://schema.org/InStock'."
-                    ),
-                    "priority": "high",
-                },
-            })
+                action=(
+                    f"Add missing Offer properties ({', '.join(missing_props)}) to product schema templates, "
+                    "populated from backend pricing and inventory systems, "
+                    "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                    "Verify: curl -s <url> | grep -E 'price|availability'."
+                ),
+                mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                fix_effort="low",
+                verification="curl -s <url> | grep -E 'price|availability'",
+            ))
         else:
             for it in items:
-                findings.append({
-                    "title": f"Product Offer object missing properties on {it['path']}",
-                    "severity": "high",
-                    "category": "discoverability",
-                    "skill_source": "structured-data-audit",
-                    "evidence": (
+                findings.append(make_finding(
+                    title=f"Product Offer object missing properties on {it['path']}",
+                    severity="high",
+                    evidence=(
                         f"Page: {it['page_url']}. "
                         f"Product JSON-LD has 'offers' object but missing: {', '.join(missing_props)}."
                     ),
-                    "suggested_action": {
-                        "summary": (
-                            f"Add to the offers object: {', '.join(missing_props)}. "
-                            "Use priceCurrency: 'USD' (ISO 4217) and availability: 'https://schema.org/InStock'."
-                        ),
-                        "priority": "high",
-                    },
-                })
+                    action=(
+                        f"Add missing Offer properties ({', '.join(missing_props)}) to Product JSON-LD, "
+                        "populated from backend pricing and inventory systems, "
+                        "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                        "Verify: curl -s <url> | grep -E 'price|availability'."
+                    ),
+                    mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                    fix_effort="low",
+                    verification="curl -s <url> | grep -E 'price|availability'",
+                ))
 
     # FAQPage mainEntity issues
     if len(faq_issues) > 2:
         page_urls = [it["page_url"] for it in faq_issues]
-        findings.append({
-            "title": f"FAQPage mainEntity is empty or invalid across {len(faq_issues)} pages",
-            "severity": "high",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": f"FAQPage JSON-LD has no items in mainEntity across {len(faq_issues)} pages: {', '.join(page_urls)}.",
-            "suggested_action": {
-                "summary": "Populate mainEntity with Question objects each having name and acceptedAnswer.",
-                "priority": "high",
-            },
-        })
+        findings.append(make_finding(
+            title=f"FAQPage mainEntity is empty or invalid across {len(faq_issues)} pages",
+            severity="high",
+            evidence=f"FAQPage JSON-LD has no items in mainEntity across {len(faq_issues)} pages: {', '.join(page_urls)}.",
+            action=(
+                "Populate the mainEntity array in FAQPage JSON-LD templates with Question and Answer objects, "
+                "populated from server-rendered FAQ content across affected pages, "
+                "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
+            ),
+            mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -i 'acceptedAnswer'",
+        ))
     else:
         for it in faq_issues:
-            findings.append({
-                "title": f"FAQPage mainEntity is empty or invalid on {it['path']}",
-                "severity": "high",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": f"Page: {it['page_url']}. FAQPage JSON-LD has no items in mainEntity.",
-                "suggested_action": {
-                    "summary": "Populate mainEntity with Question objects each having name and acceptedAnswer.",
-                    "priority": "high",
-                },
-            })
+            findings.append(make_finding(
+                title=f"FAQPage mainEntity is empty or invalid on {it['path']}",
+                severity="high",
+                evidence=f"Page: {it['page_url']}. FAQPage JSON-LD has no items in mainEntity.",
+                action=(
+                    "Populate the mainEntity array in FAQPage JSON-LD with Question and Answer objects, "
+                    "populated from server-rendered FAQ Q&A content on the page, "
+                    "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                    "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
+                ),
+                mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+                fix_effort="medium",
+                verification="curl -s <url> | grep -i 'acceptedAnswer'",
+            ))
 
     total_pages = len(pages)
     no_markup_pct = len(pages_without_jsonld) / total_pages * 100 if total_pages else 0
 
     # Summary: no markup
     if no_markup_pct >= 80:
-        findings.insert(0, {
-            "title": f"0 of {total_pages} pages contain any schema.org JSON-LD",
-            "severity": "critical",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": (
+        findings.insert(0, make_finding(
+            title=f"0 of {total_pages} pages contain any schema.org JSON-LD",
+            severity="critical",
+            evidence=(
                 f"Sampled {total_pages} pages; {len(pages_without_jsonld)}/{total_pages} "
                 f"({no_markup_pct:.0f}%) have no <script type='application/ld+json'> block. "
                 f"Checked pages include: {', '.join(pages_without_jsonld[:8])}."
             ),
-            "suggested_action": {
-                "summary": (
-                    "Implement schema.org JSON-LD markup across all page types. "
-                    "Start with Organization on the homepage, then Product/Article/FAQPage "
-                    "on relevant pages. Use Google's Structured Data Markup Helper."
-                ),
-                "priority": "critical",
-            },
-        })
+            action=(
+                "Implement schema.org JSON-LD markup inside the <head> of all page templates, "
+                "populated from server-rendered CMS data starting with Organization on the homepage and Product or Article on detail pages, "
+                "because AI crawlers fetch raw HTML without executing client-side scripts and cannot extract unstructured page concepts. "
+                "Verify: curl -s <url> | grep -i 'application/ld+json'."
+            ),
+            mechanism="AI search bots rely on raw HTML JSON-LD to index entities and will miss brand semantics when structured markup is absent.",
+            fix_effort="high",
+            verification="curl -s <url> | grep -i 'application/ld+json'",
+        ))
     elif no_markup_pct >= 50:
-        findings.insert(0, {
-            "title": f"{len(pages_without_jsonld)}/{total_pages} pages lack schema.org JSON-LD",
-            "severity": "high",
-            "category": "discoverability",
-            "skill_source": "structured-data-audit",
-            "evidence": (
+        findings.insert(0, make_finding(
+            title=f"{len(pages_without_jsonld)}/{total_pages} pages lack schema.org JSON-LD",
+            severity="high",
+            evidence=(
                 f"Only {pages_with_jsonld}/{total_pages} sampled pages have JSON-LD markup. "
                 f"Pages without markup: {', '.join(pages_without_jsonld[:6])}."
             ),
-            "suggested_action": {
-                "summary": (
-                    "Extend JSON-LD markup to all page types. "
-                    "Prioritize product, article, and FAQ pages for maximum AI citation impact."
-                ),
-                "priority": "high",
-            },
-        })
+            action=(
+                "Extend schema.org JSON-LD markup to unannotated page templates, "
+                "populated from server-rendered CMS page metadata across product, article, and FAQ pages, "
+                "because AI agents cannot verify semantic entity attributes on pages lacking structured data. "
+                "Verify: curl -s <url> | grep -i 'application/ld+json'."
+            ),
+            mechanism="Pages lacking schema markup cannot be reliably interpreted as distinct entity types by AI search engines.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -i 'application/ld+json'",
+        ))
 
     # Suggest missing high-value schema types
     # Path pattern matching test cases:
@@ -765,43 +803,43 @@ def run(url: str) -> list[dict]:
             for p in pages
         )
         if has_product_pages and "Product" not in page_type_coverage:
-            findings.append({
-                "title": "Product pages detected but no Product JSON-LD found",
-                "severity": "high",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": (
+            findings.append(make_finding(
+                title="Product pages detected but no Product JSON-LD found",
+                severity="high",
+                evidence=(
                     "URL patterns suggest this site has product pages "
                     "(paths matching /product/, /shop/, /item/), "
                     "but no Product schema.org JSON-LD was found on any of them."
                 ),
-                "suggested_action": {
-                    "summary": (
-                        "Add Product JSON-LD to all product pages with at minimum: "
-                        "name, description, offers (price, priceCurrency, availability), image, brand."
-                    ),
-                    "priority": "high",
-                },
-            })
+                action=(
+                    "Add Product + Offer JSON-LD inside <head> on every product page, "
+                    "populated from server-rendered HTML (not JS-injected) including name, sku, offers.price, offers.priceCurrency, offers.availability, brand, image, "
+                    "because GPTBot and ClaudeBot fetch raw HTML without executing JS making JS-injected schema invisible to them. "
+                    "Verify: curl -A 'GPTBot' <url> | grep -i '\"@type\":\\s*\"Product\"'."
+                ),
+                mechanism="GPTBot and ClaudeBot fetch raw HTML without executing JS, so JS-injected or absent schema is invisible to them.",
+                fix_effort="high",
+                verification="curl -A 'GPTBot' <url> | grep -i '\"@type\":\\s*\"Product\"'",
+            ))
         if has_blog_pages and "Article" not in page_type_coverage and "BlogPosting" not in page_type_coverage:
-            findings.append({
-                "title": "Blog/article pages detected but no Article JSON-LD found",
-                "severity": "medium",
-                "category": "discoverability",
-                "skill_source": "structured-data-audit",
-                "evidence": (
+            findings.append(make_finding(
+                title="Blog/article pages detected but no Article JSON-LD found",
+                severity="medium",
+                evidence=(
                     "URL patterns suggest this site has blog or article pages, "
                     "but no Article or BlogPosting JSON-LD was found. "
                     "AI assistants rely on Article markup to properly attribute authored content."
                 ),
-                "suggested_action": {
-                    "summary": (
-                        "Add Article or BlogPosting JSON-LD to all blog posts with: "
-                        "headline, datePublished, dateModified, author (Person with name), image."
-                    ),
-                    "priority": "medium",
-                },
-            })
+                action=(
+                    "Add Article or BlogPosting JSON-LD inside <head> on all blog and article pages, "
+                    "populated from server-rendered editorial metadata including headline, datePublished, dateModified, author, and image, "
+                    "because AI assistants rely on structured Article schema in raw HTML to attribute authorship and evaluate content freshness. "
+                    "Verify: curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'."
+                ),
+                mechanism="AI search assistants rely on Article JSON-LD in initial HTML to attribute authored content and evaluate topical relevance.",
+                fix_effort="medium",
+                verification="curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'",
+            ))
 
     return findings
 

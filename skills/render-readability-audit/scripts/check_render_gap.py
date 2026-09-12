@@ -31,9 +31,17 @@ except ImportError as e:
         "skill_source": "render-readability-audit",
         "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml",
-            "priority": "low"
-        }
+            "summary": (
+                "Install required python packages, "
+                "populated from PyPI via requirements.txt, "
+                "because missing audit dependencies prevent local execution of the render gap audit. "
+                "Verify: python -c 'import requests, bs4'."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation of raw HTML vs rendered text differences.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
@@ -360,7 +368,7 @@ async def _run_playwright_audit_async(render_targets: list[str]) -> list[dict]:
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
-def making_finding(title, severity, evidence, action):
+def making_finding(title, severity, evidence, action, mechanism=None, fix_effort=None, verification=None):
     return {
         "title": title,
         "severity": severity,
@@ -371,6 +379,9 @@ def making_finding(title, severity, evidence, action):
             "summary": action,
             "priority": severity,
         },
+        "mechanism": mechanism or "AI retrieval systems and web scrapers lacking headless browser execution miss key information that only appears after client-side rendering.",
+        "fix_effort": fix_effort or ("high" if severity in ("critical", "high") else "medium"),
+        "verification": verification or "curl -s <url> | wc -w",
     }
 
 # ── Main audit logic ───────────────────────────────────────────────────────────
@@ -391,10 +402,13 @@ def run(url: str) -> list[dict]:
                 "Raw HTML analysis only was performed."
             ),
             action=(
-                "Install Playwright and Chromium: "
-                "pip install playwright && playwright install chromium. "
-                "Re-run to get full render gap analysis."
+                "Install Playwright and Chromium binaries, populated from your system package manager and pip, "
+                "because headless rendering is required to detect JavaScript-generated text that standard AI scrapers miss. "
+                "Verify: python -c 'import playwright; print(\"OK\")'."
             ),
+            mechanism="Without Playwright, client-side rendering disparities cannot be detected or measured.",
+            fix_effort="low",
+            verification="playwright install chromium",
         ))
         # Fall back to basic raw HTML checks only
         resp = safe_get(url)
@@ -411,10 +425,14 @@ def run(url: str) -> list[dict]:
                         "to render their primary content — invisible to AI crawlers."
                     ),
                     action=(
-                        "Implement Server-Side Rendering (SSR) or Static Site Generation (SSG) "
-                        "so your primary content is present in the raw HTTP response. "
-                        "Frameworks: Next.js (SSR/SSG), Nuxt (Vue), SvelteKit, Astro."
+                        f"Implement Server-Side Rendering (SSR) or Static Site Generation (SSG) on {url}, populated from "
+                        "server-rendered HTML templates instead of client-side JavaScript, because AI search bots such as "
+                        "GPTBot and ClaudeBot parse raw HTTP responses without executing JS bundles. "
+                        f"Verify: curl -s {url} | wc -w shows > 200 words."
                     ),
+                    mechanism="AI assistants and search crawlers lacking headless browsers see essentially blank pages when content is JS-injected.",
+                    fix_effort="high",
+                    verification=f"curl -s {url} | wc -w",
                 ))
         return findings
 
@@ -426,7 +444,14 @@ def run(url: str) -> list[dict]:
             title="Page discovery failed in render-readability-audit",
             severity="low",
             evidence=f"Could not crawl pages for render gap analysis: {exc}",
-            action="Check network connectivity and that the site is publicly accessible.",
+            action=(
+                f"Ensure internal links on {url} are discoverable and return valid HTML, populated from server routing, "
+                "because crawler bot page discovery halts when initial links fail to load. "
+                f"Verify: curl -sI {url} | grep 'HTTP/'."
+            ),
+            mechanism="Link discovery failures prevent automated page crawling and render gap evaluation.",
+            fix_effort="low",
+            verification=f"curl -sI {url}",
         ))
         return findings
 
@@ -498,7 +523,13 @@ def run(url: str) -> list[dict]:
             title="Playwright rendering failed",
             severity="low",
             evidence=f"Playwright browser error: {type(exc).__name__}: {exc}",
-            action="Ensure Chromium is installed: playwright install chromium",
+            action=(
+                "Re-install headless browser binaries and verify local execution permissions, populated from your OS environment setup, "
+                "because browser initialization failures abort post-JavaScript DOM evaluation. Verify: playwright install chromium."
+            ),
+            mechanism="Browser execution faults prevent capturing post-JavaScript DOM states.",
+            fix_effort="low",
+            verification="playwright install chromium",
         ))
         return findings
 
@@ -518,10 +549,13 @@ def run(url: str) -> list[dict]:
                 f"Render-gap analysis could not run for these pages:\n{url_list}"
             ),
             action=(
-                "Ensure primary page content is accessible without requiring JavaScript interaction, "
-                "login, or cookie acceptance. AI crawlers and search bots may not execute JS or accept "
-                "consent prompts, making this content invisible to them."
+                "Render primary content without blocking consent overlays or JS gates, populated from initial server HTML delivery, "
+                "because AI retrieval crawlers cannot interact with consent dialogs or solve client-side challenges. "
+                "Verify: curl -s <url> contains primary article text without modal barriers."
             ),
+            mechanism="Mandatory client-side consent gates prevent automated AI agents from reaching actual content.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -i '<main'",
         ))
         if not gap_results and not timed_out_urls:
             return findings
@@ -541,10 +575,13 @@ def run(url: str) -> list[dict]:
                 "Render-gap analysis was skipped for these pages."
             ),
             action=(
-                "Verify the affected pages load in a standard browser. "
-                "If bot management (e.g. Cloudflare, Akamai) is active, ensure legitimate "
-                "AI crawler user-agents are not blocked or challenged."
+                "Whitelist known AI crawler user-agents in your WAF and CDN bot protection rules, populated from edge security firewall configurations, "
+                "because aggressive bot mitigation blocks legitimate search and AI agents from reading pages. "
+                "Verify: curl -s -A 'GPTBot' <url> returns HTTP 200."
             ),
+            mechanism="Firewall and bot challenges prevent AI assistants from indexing page content.",
+            fix_effort="low",
+            verification="curl -s -A 'GPTBot' <url>",
         ))
         # If ALL pages timed out, no gap data at all — return early.
         if not gap_results:
@@ -569,10 +606,13 @@ def run(url: str) -> list[dict]:
             severity=sev,
             evidence="\n".join(evidence_lines),
             action=(
-                "Implement Server-Side Rendering (SSR) or Static Site Generation (SSG) so content is present "
-                "in the initial HTML response across these pages. At minimum, ensure product names, descriptions, "
-                "pricing, and primary navigation appear in raw HTML."
+                f"Implement SSR or pre-rendering across affected pages, populated from server-rendered backend templates or static site generation, "
+                f"because AI search bots read only the raw HTTP response and miss {avg_gap}% of critical content. "
+                "Verify: curl -s <url> | wc -w matches browser rendered word count."
             ),
+            mechanism="Significant render gaps mean that the majority of page content is completely invisible to fast raw-HTML AI crawlers.",
+            fix_effort="high",
+            verification="curl -s <url> | wc -w",
         ))
     else:
         for r in gap_pages:
@@ -591,10 +631,13 @@ def run(url: str) -> list[dict]:
                         f"Affected URL: {page_url}"
                     ),
                     action=(
-                        "Implement SSR or SSG so content is in the initial HTML response. "
-                        "At minimum, ensure product names, prices, and key facts appear in raw HTML. "
-                        "Use Next.js getServerSideProps/getStaticProps or equivalent."
+                        f"Render core body text and metadata on the server for {page_url}, populated from server-rendered templates (e.g. Next.js SSR/SSG), "
+                        f"because {gap_pct}% of content on this page requires JavaScript execution and is invisible to AI crawlers. "
+                        f"Verify: curl -s {page_url} | grep -o '<p[^>]*>.*</p>'."
                     ),
+                    mechanism="AI assistants relying on initial HTTP responses miss high-value product or editorial text that is rendered purely on the client.",
+                    fix_effort="high",
+                    verification=f"curl -s {page_url} | wc -w",
                 ))
             else:
                 findings.append(making_finding(
@@ -606,9 +649,13 @@ def run(url: str) -> list[dict]:
                         f"Render gap: {gap_pct}%. Affected URL: {page_url}"
                     ),
                     action=(
-                        "Review client-side-only components. Move key informational content "
-                        "to server-rendered or static HTML."
+                        f"Move client-rendered informational blocks on {page_url} to initial server HTML, populated from server components or pre-rendered markup, "
+                        f"because search engines and AI agents may index incomplete snippets when {gap_pct}% of words are deferred to JS. "
+                        f"Verify: curl -s {page_url} contains key descriptive phrases."
                     ),
+                    mechanism="Moderate render gaps lead to partial indexing where secondary specifications and summaries are omitted.",
+                    fix_effort="medium",
+                    verification=f"curl -s {page_url} | wc -w",
                 ))
 
     # Summary finding if site-wide average gap is high (when not already consolidated)
@@ -625,10 +672,13 @@ def run(url: str) -> list[dict]:
                     "AI crawlers that do not execute JS will see a heavily degraded version of this site."
                 ),
                 action=(
-                    "Prioritize migrating to SSR or SSG. This is the single highest-impact "
-                    "change for AI discoverability on this site. "
-                    "Consider Next.js, SvelteKit, Astro, or Remix."
+                    f"Migrate to Server-Side Rendering (SSR) or Static Site Generation (SSG) across the site, populated from a modern web framework "
+                    f"(Next.js, Nuxt, Astro, or SvelteKit), because {avg_gap}% site-wide render gap leaves the vast majority of brand content undetectable by AI crawlers. "
+                    f"Verify: curl -s {url} | grep -iE '<h1|<main|<article'."
                 ),
+                mechanism="A site-wide reliance on client-side rendering blinds non-JS AI search models to virtually all site copy.",
+                fix_effort="high",
+                verification=f"curl -s {url} | grep -i '<main'",
             ))
 
     return findings

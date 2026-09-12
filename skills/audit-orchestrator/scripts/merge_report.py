@@ -43,9 +43,28 @@ def _import_worker(skill_folder: str, script_name: str):
     return mod
 
 
+try:
+    from beyond_problem import get_beyond_problem_suggestions
+except ImportError:
+    try:
+        from skills.audit_orchestrator.scripts.beyond_problem import get_beyond_problem_suggestions
+    except ImportError:
+        import importlib.util
+        _bp_path = os.path.join(os.path.dirname(__file__), "beyond_problem.py")
+        if not os.path.exists(_bp_path):
+            _bp_path = os.path.join(_SKILLS_ROOT, "skills", "audit-orchestrator", "scripts", "beyond_problem.py")
+        if os.path.exists(_bp_path):
+            _spec = importlib.util.spec_from_file_location("beyond_problem", _bp_path)
+            _bp = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_bp)
+            get_beyond_problem_suggestions = _bp.get_beyond_problem_suggestions
+        else:
+            get_beyond_problem_suggestions = lambda url="", findings=None: []
+
+
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"]
+SEVERITY_ORDER = ["critical", "high", "medium", "low"]
 
 # Worker skill registry: (module_folder, script_filename, display_name)
 WORKER_SKILLS = [
@@ -71,21 +90,148 @@ def get_site(url: str) -> str:
     return parsed.netloc or url
 
 
+def severity_rank(sev: str) -> int:
+    s = str(sev).lower().strip()
+    order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    return order.get(s, 3)
+
+
 def severity_key(finding: dict) -> int:
-    sev = finding.get("severity", "low").lower()
-    try:
-        return SEVERITY_ORDER.index(sev)
-    except ValueError:
-        return len(SEVERITY_ORDER)
+    return severity_rank(finding.get("severity", "low"))
+
+
+def derive_mechanism(finding: dict) -> str:
+    """Generate a one-sentence mechanism explaining why this hurts AI discoverability or engagement."""
+    if finding.get("mechanism"):
+        return str(finding["mechanism"]).strip()
+
+    text = (
+        str(finding.get("title", "")) + " " +
+        str(finding.get("evidence", "")) + " " +
+        str(finding.get("category", "")) + " " +
+        str(finding.get("skill_source", ""))
+    ).lower()
+
+    if any(k in text for k in ["robot", "disallow", "status", "redirect", "4xx", "5xx", "blocked", "http"]):
+        return "Search and AI crawlers cannot index, parse, or cite content that is blocked by HTTP errors or robots.txt directives."
+    if any(k in text for k in ["render", "javascript", "playwright", "raw html", "client-rendered", "gap"]):
+        return "AI retrieval systems and web scrapers lacking headless browser execution miss key information that only appears after client-side rendering."
+    if any(k in text for k in ["schema", "json-ld", "structured data", "property", "org", "product", "article"]):
+        return "Missing or invalid structured data deprives AI answer engines of explicit semantic entities and relationships needed for authoritative citation."
+    if any(k in text for k in ["freshness", "stale", "inconsistent", "phone", "email", "address", "conflict"]):
+        return "Conflicting or stale brand facts across pages lower retrieval model confidence and increase hallucination risks in AI responses."
+    if any(k in text for k in ["entity", "sameas", "wikidata", "wikipedia", "crunchbase", "legalname", "about"]):
+        return "Lack of authoritative external identity anchors hinders knowledge graph disambiguation, causing AI assistants to confuse or overlook the brand."
+    if any(k in text for k in ["engagement", "nav", "cta", "call-to-action", "link", "search", "breadcrumb"]):
+        return "On-page friction, broken pathways, or absent calls-to-action cause visitors arriving from AI assistant links to bounce before converting."
+
+    return "This issue impedes AI search systems and assistants from accurately discovering, parsing, and attributing brand content."
+
+
+def derive_fix_effort(finding: dict, severity: str) -> str:
+    """Derive fix effort level: low, medium, or high."""
+    if finding.get("fix_effort"):
+        val = str(finding["fix_effort"]).lower().strip()
+        if val in ("low", "medium", "high"):
+            return val
+
+    text = (str(finding.get("title", "")) + " " + str(finding.get("skill_source", ""))).lower()
+
+    if any(k in text for k in ["robots.txt", "cta", "h1", "sameas", "sitemap", "meta"]):
+        return "low"
+    if any(k in text for k in ["render gap", "architecture", "ssr", "database"]):
+        return "high"
+    if severity in ("critical", "high"):
+        return "medium"
+    return "low"
+
+
+def derive_verification(finding: dict) -> str:
+    """Derive concrete command or check to verify the fix."""
+    if finding.get("verification"):
+        return str(finding["verification"]).strip()
+
+    text = (str(finding.get("title", "")) + " " + str(finding.get("skill_source", ""))).lower()
+
+    if "robot" in text:
+        return "curl -sI <site_url>/robots.txt && python -c 'import urllib.robotparser; rp=urllib.robotparser.RobotFileParser(); rp.set_url(\"<site_url>/robots.txt\"); rp.read(); print(rp.can_fetch(\"GPTBot\", \"<site_url>/\"))'"
+    if "sitemap" in text:
+        return "curl -sI <site_url>/sitemap.xml | grep -i 'HTTP/'"
+    if any(k in text for k in ["schema", "json-ld", "structured"]):
+        return "curl -s <page_url> | grep -A 20 'application/ld+json' or validate using validator.schema.org"
+    if any(k in text for k in ["render", "javascript"]):
+        return "curl -s <page_url> | wc -w | diff against Playwright rendered DOM text word count"
+    if any(k in text for k in ["freshness", "inconsistency"]):
+        return "Audit contact details across footer, /contact, and /about to confirm exact string match"
+    if any(k in text for k in ["entity", "sameas", "about"]):
+        return "Verify Organization JSON-LD contains non-empty sameAs array with valid profile URLs"
+    if any(k in text for k in ["cta", "nav", "broken", "engagement"]):
+        return "Inspect page source for visible hero CTA button and test all internal links return HTTP 200"
+
+    return "Re-run the audit worker script standalone to verify 0 findings emitted"
+
+
+def normalize_finding(raw: dict) -> dict:
+    """Normalize a finding to strictly conform to the required JSON schema with safe defaults."""
+    title = str(raw.get("title") or "Observation detected").strip()
+
+    # severity: critical|high|medium|low
+    sev = str(raw.get("severity", "low")).lower().strip()
+    if sev not in ("critical", "high", "medium", "low"):
+        sev = "low"
+
+    evidence = str(raw.get("evidence") or "No detailed evidence string provided.").strip()
+
+    # suggested_action MUST be an object: {"summary": "<str>", "priority": "critical|high|medium|low"}
+    raw_action = raw.get("suggested_action")
+    if isinstance(raw_action, dict):
+        action_summary = str(raw_action.get("summary") or "Review and remediate this finding.").strip()
+        action_priority = str(raw_action.get("priority") or sev).lower().strip()
+        if action_priority not in ("critical", "high", "medium", "low"):
+            action_priority = sev
+    elif isinstance(raw_action, str) and raw_action.strip():
+        action_summary = raw_action.strip()
+        action_priority = sev
+    else:
+        action_summary = "Review and remediate this finding."
+        action_priority = sev
+
+    suggested_action = {
+        "summary": action_summary,
+        "priority": action_priority,
+    }
+
+    mechanism = derive_mechanism(raw)
+    fix_effort = derive_fix_effort(raw, sev)
+    verification = derive_verification(raw)
+
+    finding = {
+        "id": str(raw.get("id") or ""),
+        "title": title,
+        "severity": sev,
+        "evidence": evidence,
+        "suggested_action": suggested_action,
+        "mechanism": mechanism,
+        "fix_effort": fix_effort,
+        "verification": verification,
+    }
+
+    # Retain optional extension fields if present
+    for opt_key in ("category", "skill_source"):
+        if opt_key in raw:
+            finding[opt_key] = raw[opt_key]
+
+    return finding
 
 
 def assign_ids(findings: list[dict]) -> list[dict]:
-    """Sort defects by severity (critical first) and keep proactive findings at the end, then assign sequential F-XXX IDs."""
-    def sort_key(f: dict):
-        is_proactive = 1 if f.get("proactive") else 0
-        return (is_proactive, severity_key(f))
+    """Sort findings by severity (critical > high > medium > low), then by id, and assign sequential F-XXX IDs."""
+    normalized = [normalize_finding(f) for f in findings if not f.get("proactive")]
 
-    sorted_findings = sorted(findings, key=sort_key)
+    def sort_key(f: dict):
+        return (severity_rank(f["severity"]), str(f.get("id", "")), str(f.get("title", "")))
+
+    sorted_findings = sorted(normalized, key=sort_key)
     for i, finding in enumerate(sorted_findings, start=1):
         finding["id"] = f"F-{i:03d}"
     return sorted_findings
@@ -98,7 +244,6 @@ def compute_summary(findings: list[dict]) -> dict:
         "high": 0,
         "medium": 0,
         "low": 0,
-        "info": 0,
     }
     for f in findings:
         sev = f.get("severity", "low").lower()
@@ -176,11 +321,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Create dedicated author profile pages with Person schema, brief bios, and sameAs links "
-                    "to authoritative external profiles to strengthen E-E-A-T credibility for AI engines."
+                    "Create dedicated author profile pages linked from article bylines, "
+                    "populated from editorial staff directory and verified LinkedIn or Wikidata profiles, "
+                    "because AI answer engines evaluate author E-E-A-T credentials when scoring content trustworthiness. "
+                    "Verify: curl -s <url>/authors | grep -i 'Person'."
                 ),
                 "priority": "low",
             },
+            "mechanism": "AI answer engines evaluate author E-E-A-T credentials when scoring content trustworthiness.",
+            "fix_effort": "low",
+            "verification": "curl -s <url>/authors | grep -i 'Person'",
         })
 
     # 2. Content/Editorial specific: Speakable schema for voice/audio AI
@@ -198,11 +348,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Add 'speakable' properties to Article or WebPage JSON-LD using CSS selectors targeting "
-                    "introductory summaries and key takeaways."
+                    "Add Speakable schema.org markup to Article JSON-LD, "
+                    "populated from introductory summaries and key takeaway elements in page templates, "
+                    "because voice assistants and conversational AI summarizers require explicit speakable selectors to generate audio snippets. "
+                    "Verify: curl -s <url> | grep -i '\"speakable\"'."
                 ),
                 "priority": "low",
             },
+            "mechanism": "Voice assistants and conversational AI summarizers require explicit speakable selectors to generate audio snippets.",
+            "fix_effort": "low",
+            "verification": "curl -s <url> | grep -i '\"speakable\"'",
         })
 
     # 3. FAQPage schema (if site does not already have FAQPage)
@@ -219,11 +374,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Add FAQPage structured data to high-intent informational pages (such as pricing, product FAQs, "
-                    "or support pages) with clear, concise question-and-answer pairs."
+                    "Add FAQPage JSON-LD to high-intent informational pages, "
+                    "populated from server-rendered Q&A content in help and pricing templates, "
+                    "because AI answer engines directly extract question-answer pairs for conversational grounding. "
+                    "Verify: curl -s <url> | grep -i 'FAQPage'."
                 ),
                 "priority": "low",
             },
+            "mechanism": "AI answer engines directly extract question-answer pairs for conversational grounding.",
+            "fix_effort": "low",
+            "verification": "curl -s <url> | grep -i 'FAQPage'",
         })
 
     # 4. /llms.txt summary file (if not already reported or existing)
@@ -241,11 +401,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Publish an /llms.txt file at the domain root with concise Markdown summaries of your brand, "
-                    "products, and primary links to streamline AI ingestion."
+                    "Publish an /llms.txt file at domain root, "
+                    "populated from high-level site architecture and markdown documentation, "
+                    "because AI crawlers can ingest concise markdown indexes directly without HTML parsing overhead. "
+                    "Verify: curl -ILs <url>/llms.txt returns HTTP 200."
                 ),
                 "priority": "low",
             },
+            "mechanism": "AI crawlers can ingest concise markdown indexes directly without HTML parsing overhead.",
+            "fix_effort": "low",
+            "verification": "curl -ILs <url>/llms.txt",
         })
 
     # 5. BreadcrumbList schema
@@ -262,10 +427,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Implement BreadcrumbList JSON-LD on content and category pages to signal clear navigational hierarchy."
+                    "Implement BreadcrumbList JSON-LD on content and category pages, "
+                    "populated from site navigation hierarchy and parent category paths, "
+                    "because AI search indexers rely on breadcrumb schema to contextualize deep links in cited references. "
+                    "Verify: curl -s <url> | grep -i 'BreadcrumbList'."
                 ),
                 "priority": "low",
             },
+            "mechanism": "AI search indexers rely on breadcrumb schema to contextualize deep links in cited references.",
+            "fix_effort": "low",
+            "verification": "curl -s <url> | grep -i 'BreadcrumbList'",
         })
 
     # 6. Wikidata grounding
@@ -283,11 +454,16 @@ def generate_proactive_findings(url: str, existing_findings: list[dict]) -> list
             ),
             "suggested_action": {
                 "summary": (
-                    "Create or update a Wikidata item representing your organization and reference it in your "
-                    "homepage Organization JSON-LD sameAs array."
+                    "Create a Wikidata item for your organization and link it in sameAs, "
+                    "populated from official corporate registration records, "
+                    "because major LLM knowledge graphs use Wikidata as a canonical entity-resolution reference. "
+                    "Verify: curl -s <url> | grep -i 'wikidata.org'."
                 ),
                 "priority": "low",
             },
+            "mechanism": "Major LLM knowledge graphs use Wikidata as a canonical entity-resolution reference.",
+            "fix_effort": "low",
+            "verification": "curl -s <url> | grep -i 'wikidata.org'",
         })
 
     # Return 2 or 3 proactive findings (at least 2, at most 3)
@@ -327,21 +503,115 @@ def run_worker(
             ),
             "suggested_action": {
                 "summary": (
-                    f"Re-run the audit. If the error persists, run '{script}' standalone "
-                    f"to debug: python skills/{folder}/scripts/{script} {url}"
+                    f"Debug worker execution for '{display_name}', "
+                    f"populated from CLI command 'python skills/{folder}/scripts/{script} {url}', "
+                    f"because internal worker runtime failures prevent generating actionable AI audit findings. "
+                    f"Verify: python skills/{folder}/scripts/{script} {url}."
                 ),
                 "priority": "low",
             },
+            "mechanism": "Internal worker runtime failures prevent auditing and reporting AI readiness signals.",
+            "fix_effort": "low",
+            "verification": f"python skills/{folder}/scripts/{script} {url}",
         }]
 
 
-def build_report(url: str, findings: list[dict]) -> dict:
-    findings_with_ids = assign_ids(findings)
+def make_fallback_finding(display_name: str = "worker-skill") -> dict:
+    """Generate a fallback low-severity finding when a worker returns nothing or times out."""
+    return {
+        "title": f"{display_name} timed out or returned no findings",
+        "severity": "low",
+        "category": "discoverability",
+        "skill_source": display_name,
+        "evidence": (
+            f"Worker skill '{display_name}' did not complete within the time budget or returned no findings. "
+            "Partial results excluded."
+        ),
+        "suggested_action": {
+            "summary": (
+                f"Verify standalone execution of '{display_name}', "
+                f"populated from local CLI worker runner, "
+                f"because audit worker timeouts prevent collecting complete AI readiness signals for this domain. "
+                f"Verify: python -m pytest tests/test_merge_report.py."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Worker execution timeouts prevent evaluating domain AI readiness criteria.",
+        "fix_effort": "low",
+        "verification": "python -m pytest tests/test_merge_report.py",
+    }
+
+
+def handle_worker_result(findings: Optional[list], display_name: str) -> list[dict]:
+    """Ensure that if a worker returns nothing (None), a fallback low-severity finding is emitted."""
+    if findings is None:
+        return [make_fallback_finding(display_name)]
+    return findings
+
+
+def collect_findings(results: list) -> list[dict]:
+    """Collect findings from worker results, adding a fallback low-severity finding if a worker returns None."""
+    all_findings = []
+    for i, worker_findings in enumerate(results):
+        display_name = WORKER_SKILLS[i][2] if i < len(WORKER_SKILLS) else f"worker-{i}"
+        all_findings.extend(handle_worker_result(worker_findings, display_name))
+    return all_findings
+
+
+def normalize_beyond_problem_suggestion(raw: dict) -> dict:
+    """Ensure each suggestion strictly matches: {title, rationale, mechanism, priority}."""
+    title = str(raw.get("title") or "Proactive recommendation").strip()
+    rationale = str(raw.get("rationale") or raw.get("evidence") or "Recommended proactive optimization for AI discoverability.").strip()
+    mechanism = str(raw.get("mechanism") or "Enhances search intelligence and knowledge graph representation for AI assistants.").strip()
+
+    raw_priority = str(
+        raw.get("priority")
+        or (raw.get("suggested_action", {}).get("priority") if isinstance(raw.get("suggested_action"), dict) else "low")
+    ).lower().strip()
+    priority = raw_priority if raw_priority in ("low", "medium", "high") else "low"
+
+    return {
+        "title": title,
+        "rationale": rationale,
+        "mechanism": mechanism,
+        "priority": priority,
+    }
+
+
+def generate_beyond_problem_suggestions(url: str, existing_findings: Optional[list[dict]] = None) -> list[dict]:
+    """Generate proactive beyond-problem suggestions matching Round-2 concepts."""
+    raw_candidates = get_beyond_problem_suggestions(url, existing_findings or [])
+    return [normalize_beyond_problem_suggestion(c) for c in raw_candidates]
+
+
+def build_report(url: str, findings: list[dict], beyond_problem_suggestions: Optional[list] = None) -> dict:
+    # Filter defects from any proactive items
+    defect_findings = [f for f in findings if not f.get("proactive")]
+    findings_with_ids = assign_ids(defect_findings)
+
+    if beyond_problem_suggestions is None:
+        proactive_in_findings = [f for f in findings if f.get("proactive")]
+        if proactive_in_findings:
+            raw_suggestions = proactive_in_findings
+        else:
+            raw_suggestions = generate_beyond_problem_suggestions(url, defect_findings)
+    else:
+        raw_suggestions = beyond_problem_suggestions
+
+    normalized_suggestions = [
+        normalize_beyond_problem_suggestion(s) for s in (raw_suggestions or [])
+    ]
+
+    # Ensure beyond_problem_suggestions is always populated with at least 6 suggestions
+    if len(normalized_suggestions) < 6 and (beyond_problem_suggestions is None or len(beyond_problem_suggestions) == 0):
+        normalized_suggestions = generate_beyond_problem_suggestions(url, defect_findings)
+
     return {
         "site": get_site(url),
         "audited_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "summary": compute_summary(findings_with_ids),
         "findings": findings_with_ids,
+        "beyond_problem_suggestions": normalized_suggestions,
     }
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -371,33 +641,13 @@ def run(url: str) -> dict:
     for t in threads:
         t.join(timeout=480)  # 8 min per worker; render worker needs ~405s worst-case (3 pages × 135s at 40s timeouts)
 
-    # Collect all findings
-    all_findings = []
-    for i, worker_findings in enumerate(results):
-        if worker_findings is None:
-            folder, script, display_name = WORKER_SKILLS[i]
-            all_findings.append({
-                "title": f"{display_name} timed out",
-                "severity": "low",
-                "category": "discoverability",
-                "skill_source": display_name,
-                "evidence": (
-                    f"Worker skill '{display_name}' did not complete within the time budget. "
-                    "Partial results excluded."
-                ),
-                "suggested_action": {
-                    "summary": f"Run '{display_name}' standalone to debug the timeout.",
-                    "priority": "low",
-                },
-            })
-        else:
-            all_findings.extend(worker_findings)
+    # Collect all findings (using collect_findings helper)
+    all_findings = collect_findings(results)
 
-    # Append 2-3 proactive findings tailored to what the crawl revealed
-    proactive_findings = generate_proactive_findings(url, all_findings)
-    all_findings.extend(proactive_findings)
+    # Generate beyond-problem suggestions tailored to the site
+    suggestions = generate_beyond_problem_suggestions(url, all_findings)
 
-    return build_report(url, all_findings)
+    return build_report(url, all_findings, beyond_problem_suggestions=suggestions)
 
 
 def main():

@@ -1,5 +1,24 @@
-﻿__pycache__/
+# Byte-compiled / optimized / cache files
+__pycache__/
 *.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing and typing caches
+.pytest_cache/
+.mypy_cache/
+
+# Operating system files
+.DS_Store
+
+# Distribution and packaging
+*.egg-info/
+dist/
+build/
+
+# Test output artifacts and zip archives
 test*.json
-**/__pycache__/
-**/*.pyc
+*.zip

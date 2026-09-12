@@ -1,181 +1,118 @@
 # Brand AI-Readiness Audit Marketplace
 
+[![CI](https://img.shields.io/github/actions/workflow/status/<OWNER>/<REPO>/ci.yml?branch=main&label=CI)](https://github.com/<OWNER>/<REPO>/actions/workflows/ci.yml)
+
 > **Adobe University Hackathon 2026 — Round 3 Submission**
 >
 > An agent skill marketplace that audits any public website URL and produces a structured JSON report identifying why a brand is **hard for AI assistants to discover and cite**, and why **on-site visitors fail to engage** — with prioritized, actionable fixes.
 
 ---
 
-## Quick Start
+## What this marketplace does
 
-```bash
-# 1. Install dependencies
-pip install requests beautifulsoup4 lxml playwright
-playwright install chromium
-
-# 2. Run a full audit (outputs to stdout)
-python skills/audit-orchestrator/scripts/merge_report.py https://example.com
-
-# 3. Save report to file
-python skills/audit-orchestrator/scripts/merge_report.py https://example.com --output report.json
-```
-
-**Runtime**: < 5 minutes per typical site  
-**Output**: Schema-compliant JSON with findings, severity levels, evidence strings, and actionable fixes  
-**Safety**: Read-only HTTP GET only. Respects `robots.txt`. No auth, no destructive actions.
+The **Brand AI-Readiness Audit Marketplace** evaluates how modern AI search engines, generative answer engines (ChatGPT, Perplexity, Claude, Google Gemini), and human visitors experience and process a website. When an AI agent recommends a brand or answers a user query, it relies on server crawlability, machine-readable structured schema, raw-HTML text availability, unambiguous entity identifiers, and factual consistency across the web. At the same time, once an AI agent sends a user to the site, on-page engagement factors dictate whether that visitor converts. This marketplace performs a comprehensive, multi-dimensional audit of any target domain in under 5 minutes, returning an evidence-backed, schema-compliant JSON report with prioritized findings and concrete remediation steps.
 
 ---
 
-## Architecture
+## Skills
 
-```
-brand-ai-readiness-audit/
-├── marketplace.json               ← agentskills.io manifest (1 entrypoint)
-├── README.md                      ← this file
-└── skills/
-    ├── audit-orchestrator/        ← ENTRYPOINT — orchestrates all 6 workers
-    ├── crawl-access-audit/        ← robots.txt, HTTP status, sitemap
-    ├── render-readability-audit/  ← JS render gap (raw vs Playwright)
-    ├── structured-data-audit/     ← schema.org JSON-LD audit
-    ├── freshness-corroboration-audit/ ← fact consistency & freshness
-    ├── entity-clarity-audit/      ← sameAs, legalName, About page
-    └── engagement-audit/          ← nav, broken links, CTAs, breadcrumbs
-```
-
-The orchestrator runs all 6 worker skills **in parallel threads** for speed, then merges and sorts findings by severity before outputting the final report.
-
----
-
-## Skills Reference
-
-### `audit-orchestrator` ← **ENTRYPOINT**
-
-**Script**: [`skills/audit-orchestrator/scripts/merge_report.py`](skills/audit-orchestrator/scripts/merge_report.py)
-
-The single entry point for the marketplace. Accepts a URL, spawns all 6 worker audits in parallel threads, collects their findings lists, assigns sequential IDs (`F-001`, `F-002`, ...) ordered by severity, computes summary counts, and outputs a single schema-compliant JSON report.
-
-Handles worker failures gracefully — if one skill errors or times out, a `low`-severity diagnostic finding is included and the report is still emitted.
-
----
+### `audit-orchestrator`
+The single entry point for the marketplace (`marketplace.json`). It accepts a target URL, normalizes it, spawns all six specialized worker audit skills concurrently across separate worker threads, gathers their findings, deduplicates and normalizes output, sorts findings strictly by severity (`critical` → `high` → `medium` → `low`), assigns sequential IDs (`F-001`, `F-002`, ...), appends proactive strategic suggestions via `beyond_problem.py`, computes summary metrics, and emits the final consolidated JSON report to stdout or file.
 
 ### `crawl-access-audit`
-
-**Script**: [`skills/crawl-access-audit/scripts/check_access.py`](skills/crawl-access-audit/scripts/check_access.py)
-
-Checks whether AI crawlers and search bots can access the site.
-
-| Check | What it detects |
-|---|---|
-| `robots.txt` rules | Blocks for GPTBot, ChatGPT-User, Google-Extended, PerplexityBot, anthropic-ai, CCBot, Omgilibot |
-| HTTP status codes | Non-200 homepage, 4xx/5xx on crawled pages |
-| Redirect chains | Chains > 2 hops (latency, crawler timeout risk) |
-| `sitemap.xml` | Absence of discoverable sitemap via robots.txt or common paths |
-
-**Severity range**: `critical` (homepage blocked) → `medium` (sitemap missing, redirect chains)
-
----
+Inspects root server configuration, HTTP status codes, redirect hops, and `robots.txt` directives against 14 known AI crawler tokens (including `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `PerplexityBot`, `ClaudeBot`, `Google-Extended`, and `Applebot-Extended`). It ensures robots.txt missing states (404/connection errors) default to all-allowed per RFC 9309, detects Cloudflare or bot-wall 403/503 challenges with diagnostic findings, identifies long redirect chains (>2 hops), flags missing `sitemap.xml` entries, and checks for root `/llms.txt` summary manifests while capping high-volume page fetches at 20.
 
 ### `render-readability-audit`
-
-**Script**: [`skills/render-readability-audit/scripts/check_render_gap.py`](skills/render-readability-audit/scripts/check_render_gap.py)
-
-Detects content that only exists after JavaScript execution by diffing raw HTTP response text against Playwright-rendered DOM text.
-
-| Check | What it detects |
-|---|---|
-| Render gap % | `(rendered_words − raw_words) / rendered_words × 100` per page |
-| Site-wide average | Aggregate render gap across all sampled pages |
-| Key fact visibility | Phone/email/price patterns missing from raw HTML |
-
-**Thresholds**: `> 30%` → `high`; `> 15%` → `medium`; `> 30%` average across site → `critical`
-
-**Playwright fallback**: If Playwright is not installed, emits a `low`-severity note and performs raw-HTML-only word count analysis.
-
----
+Quantifies the "JavaScript render gap" by diffing raw HTTP response text (what simple AI crawlers see) against headless Playwright-rendered DOM text (what modern browsers execute). It computes per-page and site-wide average render gap percentages, identifying key brand facts (pricing, contact information, product specifications) that are rendered exclusively via client-side JavaScript and therefore remain completely invisible to non-JS crawlers such as GPTBot, ClaudeBot, and Common Crawl.
 
 ### `structured-data-audit`
-
-**Script**: [`skills/structured-data-audit/scripts/check_schema.py`](skills/structured-data-audit/scripts/check_schema.py)
-
-Checks for presence, JSON validity, and completeness of schema.org JSON-LD markup on up to 12 representative pages.
-
-| Check | What it detects |
-|---|---|
-| JSON-LD presence | Pages with zero `<script type="application/ld+json">` blocks |
-| Malformed JSON | `json.loads()` failures with parse error evidence |
-| Required properties | Missing fields per type (Organization, Product, Article, FAQPage, LocalBusiness, etc.) |
-| Recommended properties | Missing high-value fields (`sameAs`, `logo`, `image`, `description`) |
-| Type coverage | Product pages without Product schema; blog pages without Article schema |
-
-**Severity range**: `critical` (0% markup coverage) → `medium` (recommended fields missing)
-
----
+Extracts and audits `<script type="application/ld+json">` schema.org markup across up to 12 representative site pages. It verifies JSON syntax validity, checks coverage across core entity schemas (`Organization`, `Product`, `Article`, `FAQPage`, `LocalBusiness`), flags missing mandatory properties (e.g., `name`, `legalName`, `offers.price`, `author`), evaluates recommended corroboration properties such as `sameAs` and `image`, and checks whether schema is properly server-rendered rather than injected post-hydration.
 
 ### `freshness-corroboration-audit`
-
-**Script**: [`skills/freshness-corroboration-audit/scripts/check_freshness.py`](skills/freshness-corroboration-audit/scripts/check_freshness.py)
-
-Validates internal fact consistency across pages and checks content freshness signals.
-
-| Check | What it detects |
-|---|---|
-| Phone inconsistency | Multiple distinct phone numbers across pages |
-| Email inconsistency | > 2 distinct email addresses (flags for review) |
-| Address inconsistency | Different address strings on different pages |
-| Freshness signals | Absence of `dateModified`/`datePublished` in JSON-LD or meta tags |
-| Stale content | Most recent date signal > 365 days old |
-
-Facts are extracted via regex from both visible text and JSON-LD. Phone numbers are normalized to digit-only form before comparison to avoid false positives from formatting differences.
-
----
+Validates internal fact consistency across the site by extracting phone numbers, email addresses, physical mailing addresses, and copyright year markers from visible page content and schema markup. It alerts on internal discrepancies (such as conflicting contact numbers across landing pages), checks for temporal freshness signals (`dateModified`, `datePublished` in JSON-LD and meta tags), and flags stale content when the most recent modification date exceeds 365 days.
 
 ### `entity-clarity-audit`
-
-**Script**: [`skills/entity-clarity-audit/scripts/check_entity.py`](skills/entity-clarity-audit/scripts/check_entity.py)
-
-Checks whether the brand has sufficient disambiguating identity signals.
-
-| Check | What it detects |
-|---|---|
-| `sameAs` links | Absence of any `sameAs` in JSON-LD |
-| High-trust disambiguators | Missing Wikidata, Wikipedia, or Crunchbase in `sameAs` |
-| `legalName` | Organization JSON-LD missing `legalName` field |
-| About page | Missing or too-generic About page (scored on 6 fact categories) |
-| External identity links | No outbound links to LinkedIn, Wikidata, Crunchbase, etc. |
-
-The About page is scored for 6 disambiguating fact categories: founding year, HQ location, industry vertical, team size, customer count, and geographic reach. Score < 3/6 → `low`-severity finding.
-
----
+Measures whether a brand provides unambiguous entity resolution signals required for knowledge graph ingestion. It verifies the presence of an informative About page scored across six key disambiguation criteria (founding year, headquarters location, industry vertical, team size, customer base, geographic scope), confirms `legalName` presence in Organization schema, and checks for outbound authoritative `sameAs` links pointing to canonical knowledge bases like Wikidata, Wikipedia, Crunchbase, and LinkedIn.
 
 ### `engagement-audit`
-
-**Script**: [`skills/engagement-audit/scripts/check_engagement.py`](skills/engagement-audit/scripts/check_engagement.py)
-
-Evaluates on-site visitor engagement and navigation quality.
-
-| Check | What it detects |
-|---|---|
-| Broken internal links | % of internal URLs returning HTTP 4xx/5xx |
-| Dead-end pages | Pages with zero outbound internal links |
-| `<nav>` presence | Missing semantic navigation element on homepage |
-| Navigation depth | `<ul>/<li>` nesting > 3 levels in `<nav>` |
-| Above-fold H1 | Missing `<h1>` on homepage |
-| Above-fold CTA | No CTA-keyword link/button in first 25% of homepage HTML |
-| Breadcrumbs | No `aria-label="breadcrumb"`, `.breadcrumb` class, or BreadcrumbList JSON-LD |
-| Site search | No `<input type="search">` or `role="search"` found |
-
-**Broken link severity thresholds**: `> 20%` → `critical`; `> 10%` → `high`; `> 5%` → `medium`
+Evaluates structural on-site visitor engagement factors to identify why incoming traffic might bounce or fail to convert. It audits internal link health to calculate the percentage of broken links (HTTP 4xx/5xx), identifies dead-end orphan pages, checks for semantic `<nav>` structures and excessive nesting depth (>3 levels), verifies an above-the-fold `<h1>` heading and primary call-to-action (CTA) keyword placement, and checks for accessible breadcrumb navigation and on-site search inputs.
 
 ---
 
-## Output Schema
+## How the entrypoint composes them
 
-Every audit produces a JSON object conforming to this fixed schema:
+The entrypoint skill `audit-orchestrator` composes all six worker skills into a unified audit pipeline:
+
+```
+                          Target URL (CLI argument)
+                                     │
+                                     ▼
+                    ┌─────────────────────────────────┐
+                    │       audit-orchestrator        │
+                    │  (merge_report.py entrypoint)   │
+                    └────────────────┬────────────────┘
+                                     │
+             ┌───────────────────────┼───────────────────────┐
+             │       Parallel Worker Threads (I/O Bounded)   │
+             ▼                       ▼                       ▼
+    ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+    │  crawl-access-  │     │render-readabili-│     │structured-data- │
+    │     audit       │     │    ty-audit     │     │     audit       │
+    └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+             │                       │                       │
+             ▼                       ▼                       ▼
+    ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+    │  freshness-cor- │     │ entity-clarity- │     │  engagement-    │
+    │ roboration-audit│     │     audit       │     │     audit       │
+    └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+             │                       │                       │
+             └───────────────────────┼───────────────────────┘
+                                     │
+                                     ▼
+                    ┌─────────────────────────────────┐
+                    │      Result Aggregation         │
+                    │   - Fault-tolerant catch        │
+                    │   - Deduplicate observations    │
+                    │   - Sort by severity (Crit-Low) │
+                    │   - Assign IDs (F-001, F-002...)│
+                    └────────────────┬────────────────┘
+                                     │
+                                     ▼
+                    ┌─────────────────────────────────┐
+                    │     beyond_problem.py           │
+                    │   - Inject ≥6 proactive strategic│
+                    │     Round-2 suggestions         │
+                    └────────────────┬────────────────┘
+                                     │
+                                     ▼
+                    ┌─────────────────────────────────┐
+                    │    Final Report Emission        │
+                    │   - Strict JSON Schema          │
+                    │   - Summary counts calculation  │
+                    │   - stdout or --output file     │
+                    └─────────────────────────────────┘
+```
+
+### Composition Walkthrough
+
+1. **Input Normalization**: The orchestrator receives the target domain or URL from CLI arguments (`sys.argv[1]`), prepends `https://` if a scheme is omitted, extracts `base_url`, and resolves the canonical origin.
+2. **Parallel Worker Dispatch**: Six worker threads are spawned concurrently using Python's `threading.Thread`. Each thread invokes a dedicated worker script (`check_access.py`, `check_render_gap.py`, `check_schema.py`, `check_freshness.py`, `check_entity.py`, `check_engagement.py`) with identical URL parameters.
+3. **Fault-Tolerant Collection**: Thread completion is joined with a timeout. If a worker fails, times out, or encounters an unexpected exception, the orchestrator intercepts the failure and synthesizes a `low`-severity diagnostic finding so partial failures never halt the overall report.
+4. **Action & Schema Normalization**: Every finding is verified to ensure its `suggested_action` is a structured dictionary containing `summary` (formatted as `"<What to change>, populated from <where>, because <mechanism>. Verify: <check>."`), `priority`, `mechanism`, `fix_effort`, and `verification`.
+5. **Severity Sorting & ID Assignment**: All collected findings are sorted deterministically: `critical` first, followed by `high`, `medium`, and `low`. Sequential identifiers (`F-001`, `F-002`, `F-003`, ...) are assigned based on this sorted order.
+6. **Proactive Suggestions Injection**: The orchestrator invokes `skills/audit-orchestrator/scripts/beyond_problem.py` to generate at least 6 actionable, proactive recommendations (e.g., cross-entity corroboration, canonical facts page, conversational FAQ, locale variants, email-summary resilience, sitemap freshness signals).
+7. **Summary Calculation & Output**: Total findings and counts per severity tier (`critical`, `high`, `medium`, `low`) are calculated, audited timestamp is set in ISO 8601 UTC format with trailing `Z`, and the finalized JSON document is formatted and written to stdout or saved to `--output <path>`.
+
+---
+
+## Report schema
+
+Every audit produces a JSON object conforming strictly to this schema:
 
 ```json
 {
   "site": "example.com",
-  "audited_at": "2026-09-20T14:32:00Z",
+  "audited_at": "2026-09-12T14:32:00Z",
   "summary": {
     "total_findings": 8,
     "critical": 1,
@@ -188,93 +125,170 @@ Every audit produces a JSON object conforming to this fixed schema:
       "id": "F-001",
       "title": "0 of 12 pages contain any schema.org JSON-LD",
       "severity": "critical",
-      "category": "discoverability",
-      "skill_source": "structured-data-audit",
-      "evidence": "Sampled 12 pages; 0/12 contain <script type='application/ld+json'>. Checked: /, /products/alpha, /products/beta, ...",
+      "evidence": "Sampled 12 pages; 0/12 contain <script type='application/ld+json'>.",
       "suggested_action": {
-        "summary": "Implement schema.org JSON-LD across all page types. Start with Organization on homepage, then Product/Article/FAQPage.",
+        "summary": "Implement schema.org JSON-LD across all page types, populated from server-rendered templates, because AI crawlers require structured data to identify entity facts. Verify: curl -s https://example.com | grep 'application/ld+json'.",
         "priority": "critical"
-      }
+      },
+      "mechanism": "Absence of structured data leaves AI models guessing entity roles and product attributes from raw unstructured text.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://example.com | grep 'application/ld+json'"
+    }
+  ],
+  "beyond_problem_suggestions": [
+    {
+      "title": "Publish a Plain-Text Canonical Brand Facts Page",
+      "rationale": "Create a /facts or dedicated section with unambiguous single-sentence factual assertions.",
+      "mechanism": "LLM extractors achieve near-perfect factual precision when digesting declarative single-sentence propositions.",
+      "priority": "high"
     }
   ]
 }
 ```
 
-**Required fields** (never removed): `site`, `audited_at`, `summary`, `findings[].id`, `findings[].title`, `findings[].severity`, `findings[].evidence`, `findings[].suggested_action.summary`, `findings[].suggested_action.priority`
+---
 
-**Extension fields** added by worker skills: `category` (`"discoverability"` | `"engagement"`), `skill_source`
+## Safety & guardrails
+
+The marketplace is engineered with strict read-only safety guarantees:
+- **Read-Only GET Operations**: Audits execute read-only HTTP GET and HEAD requests exclusively. No `POST`, `PUT`, `DELETE`, or `PATCH` requests are ever transmitted.
+- **Strict robots.txt Compliance**: Crawlers honor disallow rules and rate limits specified in `robots.txt` per RFC 9309.
+- **No Authentication or Credential Access**: Audits inspect purely public web content; no passwords, API keys, session tokens, or authentication mechanisms are accepted or bypassed.
+- **Zero Site Mutation**: Audits do not fill in forms, trigger transactional workflows, or mutate server state.
+- **Bounded Worker Fetch Caps**: Each worker enforces strict page limits (≤ 15–20 pages per audit). If a high-density page contains over 100 links, discovery is capped at 20 fetches and recorded in evidence.
+- **Polite Crawl Throttling**: A crawl delay of ≥ 0.3–0.5s is maintained between sequential HTTP requests.
+- **Headless Resource Bounding**: Playwright DOM rendering is capped at a maximum of 4 concurrent page contexts.
+
+For full details, review [SECURITY.md](SECURITY.md).
 
 ---
 
-## Dependencies
+## Validation
 
-| Package | Purpose | Required |
-|---|---|---|
-| `requests` | Raw HTTP fetching | **Yes** |
-| `beautifulsoup4` | HTML parsing | **Yes** |
-| `lxml` | Fast HTML/XML parser backend | **Yes** |
-| `playwright` + Chromium | JS-rendered DOM capture | Optional (degrades gracefully) |
-
-Install everything:
+All 7 skills in this repository have been validated against the official Agent Skills specification using the reference tool `skills-ref`:
 
 ```bash
-pip install requests beautifulsoup4 lxml playwright
+skills-ref validate ./skills/audit-orchestrator
+skills-ref validate ./skills/crawl-access-audit
+skills-ref validate ./skills/render-readability-audit
+skills-ref validate ./skills/structured-data-audit
+skills-ref validate ./skills/freshness-corroboration-audit
+skills-ref validate ./skills/entity-clarity-audit
+skills-ref validate ./skills/engagement-audit
+```
+
+All 7 skills passed validation with zero errors (`Exit code: 0`). Full command execution logs, validator outputs, and skill property checklists are documented in [VALIDATION.md](VALIDATION.md).
+
+---
+
+## Testing
+
+The test suite is built on `pytest` and verifies crawler registry completeness, robots parser behavior, schema compliance, worker fallback tolerance, and action formatting without requiring external network connectivity:
+
+```bash
+# Run the complete test suite
+pytest -q
+```
+
+### Test Coverage Highlights
+- **Crawler Registry**: Confirms all 14 known AI crawlers (`GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `PerplexityBot`, `Perplexity-User`, `ClaudeBot`, `anthropic-ai`, `Claude-Web`, `Google-Extended`, `CCBot`, `Bytespider`, `Applebot-Extended`, `meta-externalagent`, `cohere-ai`) are registered and tested.
+- **Robots.txt Edge Cases**: Validates 404/connection error handling as "all allowed" in evidence, case-insensitive rule matching, and wildcard `*` behavior.
+- **Security & Bot-Walls**: Tests Cloudflare 403 challenge detection and emission of `"Automated access blocked — manual review needed"`.
+- **Resilience**: Verifies error-free parsing of non-English/multilingual HTML and validates link fetch caps on pages with >100 links.
+- **Schema & Action Compliance**: Enforces that all findings match the target schema and follow the `"<What to change>, populated from <where>, because <mechanism>. Verify: <check>."` format.
+
+---
+
+## Repo layout
+
+```
+brand-ai-readiness-audit/
+├── .editorconfig                          ← Code formatting & indentation rules
+├── .gitignore                             ← Git exclusion rules
+├── .github/
+│   └── workflows/
+│       └── ci.yml                         ← GitHub Actions CI pipeline
+├── CHANGELOG.md                           ← Version history & release notes
+├── LICENSE                                ← MIT License
+├── README.md                              ← Marketplace documentation
+├── SECURITY.md                            ← Read-only safety & security guardrails
+├── VALIDATION.md                          ← skills-ref specification validation logs
+├── marketplace.json                       ← agentskills.io entrypoint declaration
+├── requirements.txt                       ← Pinned third-party dependencies
+├── example-audit-ecommerce.json           ← Reference audit report (E-commerce)
+├── example-audit-saas.json                ← Reference audit report (SaaS)
+├── skills/
+│   ├── audit-orchestrator/                ← ENTRYPOINT SKILL
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── merge_report.py            ← Parallel worker orchestration & report merging
+│   │       └── beyond_problem.py          ← Proactive Round-2 strategic recommendations
+│   ├── crawl-access-audit/                ← WORKER SKILL 1
+│   │   ├── SKILL.md
+│   │   ├── references/
+│   │   │   ├── checks.md                  ← Check logic and pass conditions
+│   │   │   └── crawler-registry.md        ← Comprehensive AI crawler registry
+│   │   └── scripts/
+│   │       └── check_access.py            ← robots.txt, HTTP status & sitemap check
+│   ├── render-readability-audit/          ← WORKER SKILL 2
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── check_render_gap.py        ← Raw vs. Playwright render gap analysis
+│   ├── structured-data-audit/             ← WORKER SKILL 3
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── check_schema.py            ← schema.org JSON-LD extraction & audit
+│   ├── freshness-corroboration-audit/     ← WORKER SKILL 4
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── check_freshness.py         ← Fact consistency & freshness analysis
+│   ├── entity-clarity-audit/              ← WORKER SKILL 5
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       └── check_entity.py            ← About page, sameAs, & legalName audit
+│   └── engagement-audit/                  ← WORKER SKILL 6
+│       ├── SKILL.md
+│       ├── references/
+│       │   └── checks.md                  ← Engagement check criteria
+│       └── scripts/
+│           └── check_engagement.py        ← Navigation, broken links, & CTA audit
+└── tests/                                 ← Pytest test suite
+    ├── __init__.py
+    ├── conftest.py                        ← Common test fixtures & root path setup
+    ├── fixtures/                          ← Static HTML/robots test fixtures
+    │   ├── cloudflare_403.html
+    │   ├── page_js_only.html
+    │   ├── page_many_links.html
+    │   ├── page_non_english.html
+    │   ├── page_ssr.html
+    │   ├── robots_block_gptbot.txt
+    │   └── robots_partial_block.txt
+    ├── test_crawl_access.py               ← Bot-walls, 404 all-allowed, & >100 link tests
+    ├── test_crawler_registry.py           ← Registry verification for all 14 AI bots
+    ├── test_merge_report.py               ← Orchestrator merging, sorting, & fallback tests
+    ├── test_robots_parser.py              ← robots.txt parsing & sitemap detection
+    └── test_schema_compliance.py          ← Strict JSON schema compliance tests
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
 playwright install chromium
+
+# 2. Run a full audit (outputs to stdout)
+python skills/audit-orchestrator/scripts/merge_report.py https://example.com
+
+# 3. Save report to file
+python skills/audit-orchestrator/scripts/merge_report.py https://example.com --output report.json
 ```
 
----
-
-## Running Individual Skills
-
-Each worker skill is also runnable standalone for debugging:
-
-```bash
-python skills/crawl-access-audit/scripts/check_access.py https://example.com
-python skills/render-readability-audit/scripts/check_render_gap.py https://example.com
-python skills/structured-data-audit/scripts/check_schema.py https://example.com
-python skills/freshness-corroboration-audit/scripts/check_freshness.py https://example.com
-python skills/entity-clarity-audit/scripts/check_entity.py https://example.com
-python skills/engagement-audit/scripts/check_engagement.py https://example.com
-```
-
-Each outputs a JSON array of findings to stdout.
-
----
-
-## Design Decisions
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Parallelism | `threading.Thread` per worker | Reduces total runtime; GIL doesn't bottleneck I/O-bound work |
-| Crawl depth | Homepage + up to 15 pages (BFS) | Representative sample without time overrun |
-| Playwright cap | ≤ 4 concurrent renders per audit | Stays well within the 5-minute budget (~90s runtime) |
-| Thresholds | Relative (e.g. `> 30%` gap) | Generalizes across all site types |
-| Playwright | Optional import with fallback | Hosts without Playwright still get partial results |
-| JSON-LD parser | `json.loads` via BeautifulSoup | No binary deps; catches malformed JSON as a finding |
-| Error handling | Per-skill try/except | One failed skill ≠ no report |
-| Throttle | ≥ 0.3–0.5 s between requests | Polite crawling; avoids rate limiting |
-
----
-
-## Scope & Limitations
-
-- **Freshness & External Corroboration**: Checks internal consistency across crawled site pages plus a bounded sample of linked external authoritative profiles (e.g., Wikipedia, Wikidata, Crunchbase, LinkedIn) declared in `sameAs`. It does not perform an exhaustive, web-wide search or unconstrained scraping due to strict runtime budget limits and the absence of an external search engine API.
-- **Engagement Auditing**: Engagement checks evaluate structural, on-page, and semantic heuristics (semantic `<nav>`, visible `<h1>` above the fold, primary CTAs, broken internal link ratios, breadcrumbs, search elements), rather than empirical runtime user-behavior analytics (such as session bounce rates, click heatmaps, or dwell time).
-- **Crawl Sample Size**: Crawls prioritize high-signal pages (homepage, `/about`, `/contact`, `/pricing`, `/products`, `/faq`) up to 15 pages per origin to ensure reliable execution within the <5-minute hackathon budget.
-- **Headless Browser Execution**: Playwright DOM rendering is capped at 4 pages concurrently within a single browser context to optimize RAM usage while accurately capturing client-rendered content.
-
----
-
-## Rubric Mapping
-
-| Rubric Criterion | Addressing Section / Skill | How It Is Addressed |
-|---|---|---|
-| **Detection Accuracy** | All 6 Worker Skills (`check_access.py`, `check_render_gap.py`, `check_schema.py`, `check_freshness.py`, `check_entity.py`, `check_engagement.py`) | Every finding is evidence-backed with concrete metrics (exact word counts, render-gap percentages, HTTP status codes, regex-extracted contact facts, JSON parse error traces). Zero boilerplate or pre-templated findings. |
-| **Suggested-Action Quality** | All Worker Findings & `check_*.py` actions | Every finding includes a specific, actionable, and mechanism-sound `suggested_action` explaining both the remediation steps and why it impacts AI assistant citations or user conversion. |
-| **Output Design** | `audit-orchestrator` (`merge_report.py`) & [Output Schema](#output-schema) | Fixed JSON schema strictly adhering to specifications (`site`, `audited_at`, `summary`, `findings`), with sequential `F-XXX` IDs sorted by severity and visually tagged `"proactive": true` recommendations at the end. |
-| **Hygiene** | All 7 `SKILL.md` files & `marketplace.json` | 100% compliant with the Agent Skills specification — all 7 skills pass `skills-ref validate` with zero errors. Repository kept free of build artifacts (__pycache__, .pyc files) via .gitignore rules covering nested script directories. |
-| **Composition** | Architecture & `audit-orchestrator` | Clear modular architecture: 1 single entrypoint orchestrator coordinating 6 specialized worker skills in parallel threads, cleanly aggregating findings into a unified report. |
-| **Generalization** | All Worker Skills & [Design Decisions](#design-decisions) | Tested and proven across diverse archetypes (E-commerce, SaaS, Editorial/Media); relative heuristics (e.g. % render gaps) instead of hardcoded rules; graceful headless fallbacks. |
+**Runtime**: < 5 minutes per typical site  
+**Output**: Schema-compliant JSON with findings, severity levels, evidence strings, and actionable fixes  
+**Safety**: Read-only HTTP GET only. Respects `robots.txt`. No auth, no destructive actions.
 
 ---
 

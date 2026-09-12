@@ -31,9 +31,17 @@ except ImportError as e:
         "skill_source": "entity-clarity-audit",
         "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml",
-            "priority": "low"
-        }
+            "summary": (
+                "Install required python packages, "
+                "populated from PyPI via requirements.txt, "
+                "because missing audit dependencies prevent local execution of the entity clarity audit. "
+                "Verify: python -c 'import requests, bs4'."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation of brand entity disambiguation.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
@@ -228,7 +236,11 @@ def score_about_page(text: str) -> tuple[int, list[str]]:
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
-def make_finding(title, severity, evidence, action):
+def make_finding(title, severity, evidence, action, mechanism=None, fix_effort="medium", verification=None):
+    if mechanism is None:
+        mechanism = "AI assistants rely on explicit entity disambiguation and authority links to anchor brand identity in knowledge graphs."
+    if verification is None:
+        verification = "curl -s <url> | grep -i 'schema.org/Organization'"
     return {
         "title": title,
         "severity": severity,
@@ -239,6 +251,9 @@ def make_finding(title, severity, evidence, action):
             "summary": action,
             "priority": severity,
         },
+        "mechanism": mechanism,
+        "fix_effort": fix_effort,
+        "verification": verification,
     }
 
 # ── Main audit logic ───────────────────────────────────────────────────────────
@@ -256,7 +271,15 @@ def run(url: str) -> list[dict]:
             "entity-clarity-audit page discovery failed",
             "low",
             f"Could not crawl pages: {exc}",
-            "Check network connectivity.",
+            action=(
+                "Restore website accessibility and verify bot crawling permissions, "
+                "populated from web server configurations and edge firewall rules, "
+                "because AI search crawlers cannot discover or resolve brand entities when HTTP requests fail. "
+                "Verify: curl -ILs <url> returns HTTP 200."
+            ),
+            mechanism="AI search crawlers cannot discover pages or resolve brand entities when HTTP requests fail.",
+            fix_effort="low",
+            verification="curl -ILs <url>",
         )]
 
     # Aggregate data across all pages
@@ -327,30 +350,38 @@ def run(url: str) -> list[dict]:
                 "verified external identity on Wikidata, LinkedIn, or Crunchbase."
             ),
             action=(
-                "Add a 'sameAs' array to your Organization JSON-LD on the homepage. "
-                "Minimum recommended links: LinkedIn company page, Crunchbase profile. "
-                "For highest-trust disambiguation: create a Wikidata entry and link to it. "
-                "Example: \"sameAs\": [\"https://www.linkedin.com/company/...\", "
-                "\"https://www.wikidata.org/wiki/Q...\"]"
+                "Add a sameAs array to Organization JSON-LD on the homepage, "
+                "populated from official corporate profiles on LinkedIn, Crunchbase, and Wikidata, "
+                "because LLM knowledge graphs rely on canonical sameAs URIs to disambiguate brands from similarly named entities. "
+                "Verify: curl -s <url> | grep -o '\"sameAs\":\\s*\\[[^\\]]*\\]'."
             ),
+            mechanism="AI models cannot link the brand to authoritative knowledge graph nodes without canonical sameAs entity identifiers.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -o '\"sameAs\":\\s*\\[[^\\]]*\\]'",
         ))
     else:
         # Check for high-trust disambiguators
         missing_high_trust = [name for domain, name in HIGH_TRUST_DOMAINS.items()
                                if name not in same_as_platforms]
         if missing_high_trust:
+            missing_str = ", ".join(missing_high_trust)
             findings.append(make_finding(
-                title=f"sameAs present but missing high-trust disambiguators: {', '.join(missing_high_trust)}",
+                title=f"sameAs present but missing high-trust disambiguators: {missing_str}",
                 severity="medium",
                 evidence=(
                     f"Found sameAs links to: {', '.join(same_as_platforms.keys()) or 'none classified'}. "
-                    f"Missing high-trust identity anchors: {', '.join(missing_high_trust)}. "
+                    f"Missing high-trust identity anchors: {missing_str}. "
                     "Wikidata/Wikipedia/Crunchbase entries are the strongest signals for AI entity resolution."
                 ),
                 action=(
-                    f"Add the following to your sameAs array: {', '.join(missing_high_trust)}. "
-                    "If no Wikidata entry exists for your brand, create one at https://www.wikidata.org/wiki/Special:NewItem"
+                    f"Add high-trust entity links ({missing_str}) to the sameAs array in Organization JSON-LD, "
+                    "populated from company records on Wikidata, Wikipedia, or Crunchbase, "
+                    "because AI crawlers prioritize structured knowledge bases over general social profiles when establishing entity trust. "
+                    "Verify: curl -s <url> | grep -E 'wikidata|crunchbase|wikipedia'."
                 ),
+                mechanism="AI engines assign higher entity verification confidence to Wikidata, Wikipedia, and Crunchbase records than to social media accounts.",
+                fix_effort="medium",
+                verification="curl -s <url> | grep -E 'wikidata|crunchbase|wikipedia'",
             ))
 
     # ── Finding 2: No legalName in Organization JSON-LD ─────────────────────
@@ -368,10 +399,14 @@ def run(url: str) -> list[dict]:
                     "sharing a similar short brand name."
                 ),
                 action=(
-                    "Add 'legalName' to your Organization JSON-LD with your full registered company name "
-                    "(e.g., 'Acme Corporation Inc.' rather than just 'Acme'). "
-                    "This is especially important if your brand name is generic or widely shared."
+                    "Add the legalName property to Organization JSON-LD in the homepage head, "
+                    "populated from corporate registration filings, "
+                    "because AI models require the full registered corporate name to differentiate brands with generic or colloquial trade names. "
+                    "Verify: curl -s <url> | grep -i '\"legalName\"'."
                 ),
+                mechanism="LLMs frequently confuse brands that share colloquial or generic trade names unless the exact registered corporate legalName is declared.",
+                fix_effort="low",
+                verification="curl -s <url> | grep -i '\"legalName\"'",
             ))
     else:
         findings.append(make_finding(
@@ -383,10 +418,14 @@ def run(url: str) -> list[dict]:
                 "AI assistants use Organization markup as the primary entity anchor for a brand."
             ),
             action=(
-                "Add Organization JSON-LD to your homepage with: "
-                "name, legalName, url, description, logo, sameAs, contactPoint. "
-                "Reference: https://schema.org/Organization"
+                "Embed Organization JSON-LD inside the homepage head, "
+                "populated from corporate identity records including name, legalName, url, logo, description, and sameAs, "
+                "because AI agents inspect root structured data to anchor brand knowledge graph nodes. "
+                "Verify: curl -s <url> | grep -i '\"@type\":\\s*\"Organization\"'."
             ),
+            mechanism="Without root Organization schema, LLM crawlers lack an authoritative entity anchor to resolve brand attributes.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -i '\"@type\":\\s*\"Organization\"'",
         ))
 
     # ── Finding 3: No About page ───────────────────────────────────────────────
@@ -405,10 +444,14 @@ def run(url: str) -> list[dict]:
                 "that AI models use to understand a brand's purpose and distinguish it from peers."
             ),
             action=(
-                "Create an /about page with: company name (full legal name), founding year, "
-                "headquarters location, industry/vertical, mission statement, and key differentiators. "
-                "Include at least 3 specific disambiguating facts."
+                "Publish a dedicated /about page linked in primary navigation, "
+                "populated from corporate records including legal name, founding year, headquarters location, and leadership, "
+                "because AI search engines crawl dedicated company pages to extract core entity facts. "
+                "Verify: curl -ILs <url>/about | head -n 5."
             ),
+            mechanism="AI knowledge graph crawlers inspect dedicated About pages to establish corporate existence, executive leadership, and historical provenance.",
+            fix_effort="medium",
+            verification="curl -ILs <url>/about | head -n 5",
         ))
     else:
         about_url, about_text = about_page_content
@@ -424,10 +467,14 @@ def run(url: str) -> list[dict]:
                     "Generic About pages increase the risk of AI entity confusion."
                 ),
                 action=(
-                    "Improve the About page to include specific facts: founding year, HQ city/country, "
-                    "industry vertical, team size, customer count, and geographic reach. "
-                    "These specifics help AI models build an accurate entity profile."
+                    "Expand the About page with concrete entity attributes, "
+                    "populated from corporate records covering founding year, HQ location, executive leadership, and industry classification, "
+                    "because vague marketing copy prevents AI systems from extracting factual entity triples. "
+                    "Verify: curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'."
                 ),
+                mechanism="Abstract marketing text without factual timestamps, locations, or organizational structure prevents LLMs from synthesizing reliable entity profiles.",
+                fix_effort="medium",
+                verification="curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'",
             ))
 
     # ── Finding 4: No external identity links at all ───────────────────────────
@@ -442,10 +489,14 @@ def run(url: str) -> list[dict]:
                 "External identity links help AI models verify and locate the brand."
             ),
             action=(
-                "Add links to your verified social/authority profiles in the site footer or About page. "
-                "Minimum: LinkedIn and one high-trust platform (Wikidata, Crunchbase, or GitHub). "
-                "Also add these as sameAs values in your Organization JSON-LD."
+                "Add verified outbound links to company profiles in the site footer and About page, "
+                "populated from official LinkedIn, GitHub, X, or Crunchbase profiles, "
+                "because AI crawlers use bidirectional link graphs to corroborate brand authenticity across the web. "
+                "Verify: curl -s <url> | grep -Ei 'linkedin\\.com|crunchbase\\.com|github\\.com'."
             ),
+            mechanism="AI search engines evaluate outbound links to authoritative platforms to cross-corroborate domain ownership and brand authenticity.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -Ei 'linkedin\\.com|crunchbase\\.com|github\\.com'",
         ))
 
     return findings

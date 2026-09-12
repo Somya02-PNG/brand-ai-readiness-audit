@@ -33,9 +33,17 @@ except ImportError as e:
         "skill_source": "freshness-corroboration-audit",
         "evidence": f"Required package not installed: {e}",
         "suggested_action": {
-            "summary": "Install required packages: pip install requests beautifulsoup4 lxml",
-            "priority": "low"
-        }
+            "summary": (
+                "Install required python packages, "
+                "populated from PyPI via requirements.txt, "
+                "because missing audit dependencies prevent local execution of the freshness corroboration audit. "
+                "Verify: python -c 'import requests, bs4'."
+            ),
+            "priority": "low",
+        },
+        "mechanism": "Missing audit dependencies prevent local evaluation of temporal and cross-source consistency.",
+        "fix_effort": "low",
+        "verification": "python -c 'import requests, bs4'",
     }]))
     sys.exit(0)
 
@@ -310,7 +318,11 @@ def discover_pages(start_url: str, base_url: str) -> list[str]:
 
 # ── Making findings ───────────────────────────────────────────────────────────
 
-def make_finding(title, severity, evidence, action):
+def make_finding(title, severity, evidence, action, mechanism=None, fix_effort="medium", verification=None):
+    if mechanism is None:
+        mechanism = "Conflicting or missing factual and temporal metadata causes AI models to downgrade entity confidence."
+    if verification is None:
+        verification = "curl -s <url> | grep -i 'dateModified'"
     return {
         "title": title,
         "severity": severity,
@@ -321,6 +333,9 @@ def make_finding(title, severity, evidence, action):
             "summary": action,
             "priority": severity,
         },
+        "mechanism": mechanism,
+        "fix_effort": fix_effort,
+        "verification": verification,
     }
 
 # ── sameAs profile corroboration helpers ──────────────────────────────────────
@@ -645,9 +660,14 @@ def check_sameas_corroboration(
                     "models and knowledge graphs attempting entity resolution."
                 ),
                 action=(
-                    f"Reconcile brand identity details between your website and external profile ({target_url}). "
-                    "Ensure brand name, primary address, and founding info are identical across all platforms."
+                    f"Reconcile brand identity details across your website and external profile ({target_url}), "
+                    "populated from official corporate registry records, "
+                    "because AI knowledge graph algorithms flag mismatched names, addresses, or founding dates between website and authoritative profiles as entity conflicts. "
+                    f"Verify: curl -s <url> | grep -E '{target_url}'."
                 ),
+                mechanism="AI knowledge graph algorithms flag mismatched names, addresses, or founding dates between website and authoritative profiles as entity conflicts.",
+                fix_effort="medium",
+                verification=f"curl -s <url> | grep -E '{target_url}'",
             ))
 
     return findings
@@ -667,7 +687,15 @@ def run(url: str) -> list[dict]:
             "freshness-corroboration-audit page discovery failed",
             "low",
             f"Could not crawl pages: {exc}",
-            "Check network connectivity.",
+            action=(
+                "Restore page access and check crawler firewall configurations, "
+                "populated from web server routing tables, "
+                "because AI crawlers cannot audit or corroborate temporal freshness signals when pages are unreachable. "
+                "Verify: curl -ILs <url> returns HTTP 200."
+            ),
+            mechanism="AI crawlers cannot audit or corroborate temporal freshness signals when site pages are unreachable.",
+            fix_effort="low",
+            verification="curl -ILs <url>",
         )]
 
     # Collect facts, dates, and org identity per page
@@ -736,10 +764,14 @@ def run(url: str) -> list[dict]:
                 "Inconsistent contact info causes AI models to distrust the site's data."
             ),
             action=(
-                "Standardize the phone number in a single CMS variable or component. "
-                "Use E.164 format (e.g., +1-800-555-0100) in JSON-LD 'telephone' field. "
-                "Ensure all page templates reference the same source of truth."
+                "Standardize contact telephone numbers to a single canonical value, "
+                "populated from official corporate contact directory using E.164 format, "
+                "because conflicting phone numbers across pages degrade AI confidence in business contact legitimacy. "
+                "Verify: curl -s <url> | grep -Eo '\\+?[0-9]{1,3}[- .]?[0-9]{3}[- .]?[0-9]{3}[- .]?[0-9]{4}'."
             ),
+            mechanism="Conflicting phone numbers across page templates degrade AI confidence in business contact legitimacy.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -Eo '\\+?[0-9]{1,3}[- .]?[0-9]{3}[- .]?[0-9]{3}[- .]?[0-9]{4}'",
         ))
 
     # Email inconsistency
@@ -753,9 +785,14 @@ def run(url: str) -> list[dict]:
                 "While multiple emails may be intentional, excessive variety can confuse AI knowledge graphs."
             ),
             action=(
-                "Confirm these email addresses are all intentional. "
-                "For primary contact, use a single canonical email in Organization JSON-LD 'email' field."
+                "Designate a primary contact email address in Organization JSON-LD, "
+                "populated from company customer support operations, "
+                "because uncoordinated email addresses across pages prevent AI engines from identifying the authoritative contact channel. "
+                "Verify: curl -s <url> | grep -i '\"email\":'."
             ),
+            mechanism="Uncoordinated email addresses across pages prevent AI engines from identifying the authoritative contact channel.",
+            fix_effort="low",
+            verification="curl -s <url> | grep -i '\"email\":'",
         ))
 
     # Address inconsistency (strict — any difference is a problem)
@@ -775,10 +812,14 @@ def run(url: str) -> list[dict]:
                 "Address inconsistency is a strong negative signal for AI confidence in local business data."
             ),
             action=(
-                "Standardize your address in a single CMS variable. "
-                "Use a structured address in Organization/LocalBusiness JSON-LD with: "
-                "streetAddress, addressLocality, addressRegion, postalCode, addressCountry."
+                "Standardize physical postal addresses across all footer and contact templates, "
+                "populated from corporate headquarters registry records into Organization or LocalBusiness JSON-LD, "
+                "because divergent location strings cause AI models to treat local business entity claims as untrustworthy. "
+                "Verify: curl -s <url> | grep -i '\"postalCode\"'."
             ),
+            mechanism="Divergent location strings across pages cause AI models to treat local business entity claims as untrustworthy.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -i '\"postalCode\"'",
         ))
 
     # ── Freshness analysis ─────────────────────────────────────────────────────
@@ -798,10 +839,14 @@ def run(url: str) -> list[dict]:
                 "AI crawlers cannot determine whether this site's content is current."
             ),
             action=(
-                "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. "
-                "Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. "
-                "Include <lastmod> dates in your sitemap.xml."
+                "Add dateModified and datePublished timestamps to JSON-LD and page meta tags, "
+                "populated from CMS publication and revision timestamps, "
+                "because AI search crawlers deprioritize unversioned content during real-time retrieval when freshness cannot be determined. "
+                "Verify: curl -s <url> | grep -Ei 'dateModified|article:modified_time'."
             ),
+            mechanism="AI search crawlers deprioritize unversioned content during real-time retrieval because they cannot determine whether facts are current.",
+            fix_effort="medium",
+            verification="curl -s <url> | grep -Ei 'dateModified|article:modified_time'",
         ))
     else:
         # Check for stale dates
@@ -824,9 +869,14 @@ def run(url: str) -> list[dict]:
                         "AI assistants may prefer fresher sources when multiple are available."
                     ),
                     action=(
-                        "Update dateModified in JSON-LD whenever page content changes. "
-                        "Consider a content refresh strategy to keep key pages updated at least annually."
+                        "Update page content and refresh dateModified timestamps, "
+                        "populated from editorial revision history and current CMS audit logs, "
+                        "because AI answer engines favor recently modified sources over stale documents during answer generation. "
+                        "Verify: curl -s <url> | grep -i '\"dateModified\"'."
                     ),
+                    mechanism="AI answer engines favor recently modified sources over stale documents during answer generation and source attribution.",
+                    fix_effort="medium",
+                    verification="curl -s <url> | grep -i '\"dateModified\"'",
                 ))
 
         pages_with_dates = len(set(d for d in all_dates if d))
@@ -839,9 +889,14 @@ def run(url: str) -> list[dict]:
                     "Pages without freshness signals are harder for AI models to date-rank."
                 ),
                 action=(
-                    "Systematically add dateModified to all page types, not just blog posts. "
-                    "Even static pages (About, Pricing) should declare a dateModified when updated."
+                    "Inject dateModified properties into HTML templates across all page types, "
+                    "populated from page build or CMS revision metadata, "
+                    "because inconsistent timestamp coverage prevents AI rankers from evaluating document currency across the domain. "
+                    "Verify: curl -s <url> | grep -i 'dateModified'."
                 ),
+                mechanism="Inconsistent timestamp coverage across page types prevents AI rankers from evaluating document currency.",
+                fix_effort="medium",
+                verification="curl -s <url> | grep -i 'dateModified'",
             ))
 
     # ── External profile / sameAs corroboration check ─────────────────────────
