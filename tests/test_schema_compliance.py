@@ -36,7 +36,7 @@ def test_schema_compliance_exact_shape():
             },
             "mechanism": "Missing schema deprives AI models of explicit semantic entities.",
             "fix_effort": "medium",
-            "verification": "curl -s https://example.com/products | grep 'application/ld+json'",
+            "verification": "curl -s https://example.com | grep 'application/ld+json'",
         },
         {
             "title": "Missing meta description",
