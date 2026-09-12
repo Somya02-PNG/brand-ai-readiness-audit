@@ -752,13 +752,16 @@ def run(url: str) -> list[dict]:
         })
 
     # Suggest missing high-value schema types
+    # Path pattern matching test cases:
+    #   Should NOT match: "/news/tv-production-industry", "/workshops/design", "/composting-guide"
+    #   SHOULD still match: "/product/123", "/shop/shoes", "/blog/post-1", "/products"
     if total_pages > 3:
         has_product_pages = any(
-            re.search(r"/(product|shop|item|buy|store)", urlparse(p).path, re.I)
+            re.search(r"(^|/)(product|products|shop|item|items|store)(/|$|-|_)", urlparse(p).path, re.I)
             for p in pages
         )
         has_blog_pages = any(
-            re.search(r"/(blog|article|post|news)", urlparse(p).path, re.I)
+            re.search(r"(^|/)(blog|blogs|article|articles|news)(/|$|-|_)", urlparse(p).path, re.I)
             for p in pages
         )
         if has_product_pages and "Product" not in page_type_coverage:
