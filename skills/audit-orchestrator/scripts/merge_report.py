@@ -21,7 +21,7 @@ import threading
 import traceback
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-from typing import Callable
+from typing import Callable, Optional
 
 # ── Worker skill imports (relative paths resolved via sys.path) ───────────────
 
