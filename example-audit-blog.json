@@ -19,7 +19,10 @@
         "summary": "Review the Disallow rules in robots.txt for the blocked AI crawlers (ChatGPT-User, Google-Extended, PerplexityBot, anthropic-ai, CCBot, Omgilibot). If you want AI assistants to cite and summarize your content, remove or narrow these rules to allow access to key public pages, or add compensating Allow directives.",
         "priority": "critical"
       },
-      "id": "F-001"
+      "id": "F-001",
+      "mechanism": "Search and AI crawlers cannot index, parse, or cite content that is blocked by robots.txt directives.",
+      "fix_effort": "low",
+      "verification": "curl -sI https://www.theverge.com/robots.txt"
     },
     {
       "title": "Product pages detected but no Product JSON-LD found",
@@ -31,7 +34,10 @@
         "summary": "Add Product JSON-LD to all product pages with at minimum: name, description, offers (price, priceCurrency, availability), image, brand.",
         "priority": "high"
       },
-      "id": "F-002"
+      "id": "F-002",
+      "mechanism": "Missing structured data deprives AI shopping and answer engines of explicit semantic entities and pricing needed for authoritative citations.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://www.theverge.com/products | grep 'application/ld+json'"
     },
     {
       "title": "No <h1> heading on homepage",
@@ -43,7 +49,10 @@
         "summary": "Add a single, descriptive <h1> to the homepage that clearly states what the brand does (e.g., 'AI-Powered Inventory Management for E-Commerce Brands'). Keep it under 70 characters and make it human-scannable.",
         "priority": "high"
       },
-      "id": "F-003"
+      "id": "F-003",
+      "mechanism": "Missing H1 headings prevent AI summarizers and incoming visitors from rapidly determining the core purpose and topic of the site.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.theverge.com | grep '<h1'"
     },
     {
       "title": "Organization JSON-LD missing high-value recommended properties on /about-the-verge",
@@ -55,7 +64,10 @@
         "summary": "Add recommended properties to Organization JSON-LD: description, legalName, sameAs.",
         "priority": "medium"
       },
-      "id": "F-004"
+      "id": "F-004",
+      "mechanism": "Missing recommended entity properties reduce knowledge graph confidence and limit citation detail in AI assistant responses.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.theverge.com/about-the-verge | grep 'application/ld+json'"
     },
     {
       "title": "Blog/article pages detected but no Article JSON-LD found",
@@ -67,7 +79,10 @@
         "summary": "Add Article or BlogPosting JSON-LD to all blog posts with: headline, datePublished, dateModified, author (Person with name), image.",
         "priority": "medium"
       },
-      "id": "F-005"
+      "id": "F-005",
+      "mechanism": "Without Article schema, generative answer engines struggle to accurately attribute authors, publication timestamps, and editorial content.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://www.theverge.com/tech | grep 'application/ld+json'"
     },
     {
       "title": "sameAs present but missing high-trust disambiguators: Wikidata, Crunchbase",
@@ -79,7 +94,10 @@
         "summary": "Add the following to your sameAs array: Wikidata, Crunchbase. If no Wikidata entry exists for your brand, create one at https://www.wikidata.org/wiki/Special:NewItem",
         "priority": "medium"
       },
-      "id": "F-006"
+      "id": "F-006",
+      "mechanism": "Lack of authoritative external identity anchors hinders knowledge graph disambiguation, causing AI models to confuse or overlook the brand.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.theverge.com | grep 'sameAs'"
     },
     {
       "title": "Organization JSON-LD missing 'legalName'",
@@ -91,7 +109,10 @@
         "summary": "Add 'legalName' to your Organization JSON-LD with your full registered company name (e.g., 'Acme Corporation Inc.' rather than just 'Acme'). This is especially important if your brand name is generic or widely shared.",
         "priority": "medium"
       },
-      "id": "F-007"
+      "id": "F-007",
+      "mechanism": "Without a registered legal name, AI entity-matching algorithms risk conflating the organization with other entities sharing similar names.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.theverge.com | grep 'legalName'"
     },
     {
       "title": "About page lacks sufficient disambiguating identity facts (score: 2/6)",
@@ -103,7 +124,48 @@
         "summary": "Improve the About page to include specific facts: founding year, HQ city/country, industry vertical, team size, customer count, and geographic reach. These specifics help AI models build an accurate entity profile.",
         "priority": "low"
       },
-      "id": "F-008"
+      "id": "F-008",
+      "mechanism": "Generic About pages lacking structured corporate facts reduce LLM grounding confidence during entity extraction.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.theverge.com/about | grep -E 'founded|headquarters'"
+    }
+  ],
+  "beyond_problem_suggestions": [
+    {
+      "title": "Cross-link verified entity profiles across independent authority platforms via sameAs",
+      "rationale": "Independent corroboration across Wikipedia, Crunchbase, LinkedIn, and Wikidata validates brand legitimacy and feeds entity resolution algorithms in knowledge graph construction.",
+      "mechanism": "LLM knowledge engines construct high-confidence entity nodes by resolving bidirectional sameAs references across independent high-authority knowledge bases.",
+      "priority": "high"
+    },
+    {
+      "title": "Publish a canonical facts page with unambiguous declarative plain-text assertions",
+      "rationale": "A dedicated /facts or /about page presenting one unambiguous plain-text sentence per core attribute (founding date, headquarters, leadership, core products) eliminates extraction ambiguity for LLM crawlers.",
+      "mechanism": "Declarative single-fact sentences minimize semantic parsing entropy during retrieval-augmented generation (RAG) and prevent hallucinated brand claims.",
+      "priority": "high"
+    },
+    {
+      "title": "Structure conversational FAQ sections with question-shaped headings matching user prompts",
+      "rationale": "Formulating headings as explicit natural-language questions directly mirrors user prompt patterns submitted to AI search engines.",
+      "mechanism": "Question-formatted headings maximize semantic vector cosine similarity against conversational user queries, triggering direct answer citations.",
+      "priority": "medium"
+    },
+    {
+      "title": "Implement hreflang annotations and locale-specific schema for regional disambiguation",
+      "rationale": "Explicit hreflang link tags and localized schema markup distinguish regional product lines, currencies, and language variations for global AI assistants.",
+      "mechanism": "Locale and alternate tags prevent search bots from conflating regional entities or surfacing incorrect currency and availability in localized AI answers.",
+      "priority": "medium"
+    },
+    {
+      "title": "Embed machine-readable TL;DR summary blocks at the top of transactional emails",
+      "rationale": "AI email summarizers (e.g., Apple Intelligence, Gemini in Gmail, Copilot) generate automatic summaries based on early email tokens, requiring key details upfront.",
+      "mechanism": "Structured key-value summary blocks at the beginning of email HTML ensure client-side AI summarizers extract order numbers, dates, and actions without truncation errors.",
+      "priority": "low"
+    },
+    {
+      "title": "Maintain accurate <lastmod> timestamps in sitemap.xml to signal content freshness",
+      "rationale": "Including precise, genuine <lastmod> dates in sitemap.xml enables AI crawlers with limited crawl budgets to discover and ingest fresh updates promptly.",
+      "mechanism": "AI search engines prioritize re-crawling URLs with recent sitemap <lastmod> timestamps, keeping their retrieval indexes and vector embeddings synchronized.",
+      "priority": "medium"
     }
   ]
 }

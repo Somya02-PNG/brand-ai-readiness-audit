@@ -19,7 +19,10 @@
         "summary": "Add the following required properties to your Article/NewsArticle JSON-LD across affected pages: author. See schema.org/Article for full spec.",
         "priority": "high"
       },
-      "id": "F-001"
+      "id": "F-001",
+      "mechanism": "Incomplete Article schemas missing required author properties fail validation in search crawlers and degrade AI citation attribution.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://stripe.com/in/newsroom/news/bfcm2025 | grep 'author'"
     },
     {
       "title": "Product pages detected but no Product JSON-LD found",
@@ -31,7 +34,10 @@
         "summary": "Add Product JSON-LD to all product pages with at minimum: name, description, offers (price, priceCurrency, availability), image, brand.",
         "priority": "high"
       },
-      "id": "F-002"
+      "id": "F-002",
+      "mechanism": "Missing Product structured data leaves AI models guessing SaaS pricing, tiers, and capabilities from unstructured marketing copy.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://stripe.com/products | grep 'application/ld+json'"
     },
     {
       "title": "Physical address inconsistency — 24 variants found",
@@ -43,7 +49,10 @@
         "summary": "Standardize your address in a single CMS variable. Use a structured address in Organization/LocalBusiness JSON-LD with: streetAddress, addressLocality, addressRegion, postalCode, addressCountry.",
         "priority": "high"
       },
-      "id": "F-003"
+      "id": "F-003",
+      "mechanism": "Conflicting corporate addresses across domain pages lower retrieval model confidence and increase hallucination risks in AI responses.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://stripe.com/contact | grep -i 'address'"
     },
     {
       "title": "No content freshness signals found on any page",
@@ -55,7 +64,10 @@
         "summary": "Add datePublished and dateModified to all Article/BlogPosting JSON-LD. Add <meta property='article:modified_time' content='...ISO date...'> to all content pages. Include <lastmod> dates in your sitemap.xml.",
         "priority": "high"
       },
-      "id": "F-004"
+      "id": "F-004",
+      "mechanism": "Lack of modification timestamps prevents AI crawlers from evaluating whether API and product documentation is up-to-date.",
+      "fix_effort": "medium",
+      "verification": "curl -s https://stripe.com | grep -E 'dateModified|article:modified_time'"
     },
     {
       "title": "29.4% of content on / requires JS to render",
@@ -67,7 +79,10 @@
         "summary": "Review client-side-only components. Move key informational content to server-rendered or static HTML.",
         "priority": "medium"
       },
-      "id": "F-005"
+      "id": "F-005",
+      "mechanism": "AI search engines without headless browser rendering engines miss over a quarter of homepage content rendered solely via client-side JavaScript.",
+      "fix_effort": "high",
+      "verification": "curl -s https://stripe.com | wc -w"
     },
     {
       "title": "Article JSON-LD missing high-value recommended properties on /in/blog/introducing-our-agentic-commerce-solutions",
@@ -79,7 +94,10 @@
         "summary": "Add recommended properties to Article JSON-LD: description.",
         "priority": "medium"
       },
-      "id": "F-006"
+      "id": "F-006",
+      "mechanism": "Missing description fields in Article schemas reduce snippet clarity and precision when AI assistants synthesize answers.",
+      "fix_effort": "low",
+      "verification": "curl -s https://stripe.com/in/blog/introducing-our-agentic-commerce-solutions | grep 'description'"
     },
     {
       "title": "sameAs present but missing high-trust disambiguators: Wikidata",
@@ -91,7 +109,10 @@
         "summary": "Add the following to your sameAs array: Wikidata. If no Wikidata entry exists for your brand, create one at https://www.wikidata.org/wiki/Special:NewItem",
         "priority": "medium"
       },
-      "id": "F-007"
+      "id": "F-007",
+      "mechanism": "Absence of canonical Wikidata links impedes global LLM knowledge base alignment, where Wikidata serves as the primary entity identifier.",
+      "fix_effort": "low",
+      "verification": "curl -s https://stripe.com | grep 'wikidata.org'"
     },
     {
       "title": "No call-to-action detected above the fold on homepage",
@@ -103,7 +124,10 @@
         "summary": "Place a prominent CTA button/link in the hero section of the homepage. Use action-oriented text (e.g., 'Start Free Trial', 'Get a Demo', 'Shop Now'). Ensure it's visible without scrolling on desktop (above ~700px).",
         "priority": "medium"
       },
-      "id": "F-008"
+      "id": "F-008",
+      "mechanism": "Visitors referred from AI assistant recommendations bounce when an immediate conversion pathway or trial button is absent above the fold.",
+      "fix_effort": "low",
+      "verification": "curl -s https://stripe.com | grep -iE 'get started|sign up'"
     },
     {
       "title": "About page lacks sufficient disambiguating identity facts (score: 0/6)",
@@ -115,7 +139,48 @@
         "summary": "Improve the About page to include specific facts: founding year, HQ city/country, industry vertical, team size, customer count, and geographic reach. These specifics help AI models build an accurate entity profile.",
         "priority": "low"
       },
-      "id": "F-009"
+      "id": "F-009",
+      "mechanism": "An About page missing core corporate identifiers forces AI models to rely on secondary, unverified web sources for entity facts.",
+      "fix_effort": "low",
+      "verification": "curl -s https://stripe.com/about | grep -E 'founded|headquarters'"
+    }
+  ],
+  "beyond_problem_suggestions": [
+    {
+      "title": "Cross-link verified entity profiles across independent authority platforms via sameAs",
+      "rationale": "Independent corroboration across Wikipedia, Crunchbase, LinkedIn, and Wikidata validates brand legitimacy and feeds entity resolution algorithms in knowledge graph construction.",
+      "mechanism": "LLM knowledge engines construct high-confidence entity nodes by resolving bidirectional sameAs references across independent high-authority knowledge bases.",
+      "priority": "high"
+    },
+    {
+      "title": "Publish a canonical facts page with unambiguous declarative plain-text assertions",
+      "rationale": "A dedicated /facts or /about page presenting one unambiguous plain-text sentence per core attribute (founding date, headquarters, leadership, core products) eliminates extraction ambiguity for LLM crawlers.",
+      "mechanism": "Declarative single-fact sentences minimize semantic parsing entropy during retrieval-augmented generation (RAG) and prevent hallucinated brand claims.",
+      "priority": "high"
+    },
+    {
+      "title": "Structure conversational FAQ sections with question-shaped headings matching user prompts",
+      "rationale": "Formulating headings as explicit natural-language questions directly mirrors user prompt patterns submitted to AI search engines.",
+      "mechanism": "Question-formatted headings maximize semantic vector cosine similarity against conversational user queries, triggering direct answer citations.",
+      "priority": "medium"
+    },
+    {
+      "title": "Implement hreflang annotations and locale-specific schema for regional disambiguation",
+      "rationale": "Explicit hreflang link tags and localized schema markup distinguish regional product lines, currencies, and language variations for global AI assistants.",
+      "mechanism": "Locale and alternate tags prevent search bots from conflating regional entities or surfacing incorrect currency and availability in localized AI answers.",
+      "priority": "medium"
+    },
+    {
+      "title": "Embed machine-readable TL;DR summary blocks at the top of transactional emails",
+      "rationale": "AI email summarizers (e.g., Apple Intelligence, Gemini in Gmail, Copilot) generate automatic summaries based on early email tokens, requiring key details upfront.",
+      "mechanism": "Structured key-value summary blocks at the beginning of email HTML ensure client-side AI summarizers extract order numbers, dates, and actions without truncation errors.",
+      "priority": "low"
+    },
+    {
+      "title": "Maintain accurate <lastmod> timestamps in sitemap.xml to signal content freshness",
+      "rationale": "Including precise, genuine <lastmod> dates in sitemap.xml enables AI crawlers with limited crawl budgets to discover and ingest fresh updates promptly.",
+      "mechanism": "AI search engines prioritize re-crawling URLs with recent sitemap <lastmod> timestamps, keeping their retrieval indexes and vector embeddings synchronized.",
+      "priority": "medium"
     }
   ]
 }
