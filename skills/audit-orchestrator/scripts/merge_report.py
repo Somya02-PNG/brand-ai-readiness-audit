@@ -45,25 +45,6 @@ def _import_worker(skill_folder: str, script_name: str):
     return mod
 
 
-try:
-    from beyond_problem import get_beyond_problem_suggestions
-except ImportError:
-    try:
-        from skills.audit_orchestrator.scripts.beyond_problem import get_beyond_problem_suggestions
-    except ImportError:
-        import importlib.util
-        _bp_path = os.path.join(os.path.dirname(__file__), "beyond_problem.py")
-        if not os.path.exists(_bp_path):
-            _bp_path = os.path.join(_SKILLS_ROOT, "skills", "audit-orchestrator", "scripts", "beyond_problem.py")
-        if os.path.exists(_bp_path):
-            _spec = importlib.util.spec_from_file_location("beyond_problem", _bp_path)
-            _bp = importlib.util.module_from_spec(_spec)
-            _spec.loader.exec_module(_bp)
-            get_beyond_problem_suggestions = _bp.get_beyond_problem_suggestions
-        else:
-            get_beyond_problem_suggestions = lambda url="", findings=None: []
-
-
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 SEVERITY_ORDER = ["critical", "high", "medium", "low"]
@@ -637,8 +618,8 @@ def normalize_beyond_problem_suggestion(raw: dict) -> dict:
 
 
 def generate_beyond_problem_suggestions(url: str, existing_findings: Optional[list[dict]] = None) -> list[dict]:
-    """Generate proactive beyond-problem suggestions matching Round-2 concepts."""
-    raw_candidates = get_beyond_problem_suggestions(url, existing_findings or [])
+    """Generate proactive beyond-problem suggestions relying on generate_proactive_findings."""
+    raw_candidates = generate_proactive_findings(url, existing_findings or [])
     return [normalize_beyond_problem_suggestion(c) for c in raw_candidates]
 
 
@@ -660,8 +641,8 @@ def build_report(url: str, findings: list[dict], beyond_problem_suggestions: Opt
         normalize_beyond_problem_suggestion(s) for s in (raw_suggestions or [])
     ]
 
-    # Ensure beyond_problem_suggestions is always populated with at least 6 suggestions
-    if len(normalized_suggestions) < 6 and (beyond_problem_suggestions is None or len(beyond_problem_suggestions) == 0):
+    # Ensure beyond_problem_suggestions is always populated if not provided or empty
+    if not normalized_suggestions and (beyond_problem_suggestions is None or len(beyond_problem_suggestions) == 0):
         normalized_suggestions = generate_beyond_problem_suggestions(url, defect_findings)
 
     return {

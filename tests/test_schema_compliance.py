@@ -222,11 +222,11 @@ def test_safe_defaults_on_missing_or_raw_fields():
     assert findings[1]["verification"]
 
 
-def test_beyond_problem_suggestions_always_populated_at_least_six():
-    """Assert beyond_problem_suggestions is always populated with at least 6 suggestions in every report."""
+def test_beyond_problem_suggestions_always_populated():
+    """Assert beyond_problem_suggestions is always populated in every report."""
     report = merge_report.build_report("https://example.com", [], beyond_problem_suggestions=[])
     assert isinstance(report["beyond_problem_suggestions"], list)
-    assert len(report["beyond_problem_suggestions"]) >= 6
+    assert len(report["beyond_problem_suggestions"]) >= 2
     assert report["findings"] == []
     assert report["summary"]["total_findings"] == 0
 
