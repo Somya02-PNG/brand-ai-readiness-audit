@@ -11,10 +11,13 @@ The **Brand AI-Readiness Audit Marketplace** is designed from the ground up as a
 - No state-mutating HTTP methods (`POST`, `PUT`, `DELETE`, `PATCH`) are ever generated or sent.
 - Form fields, login inputs, and transaction endpoints are never submitted or triggered.
 
-### 2. Respects `robots.txt`
-- All crawling operations strictly adhere to `robots.txt` directives per the RFC 9309 specification.
-- If a target domain disallows AI crawlers or audit user-agents from accessing specific paths or the entire site, the crawlers honor the rule, report the disallow rule in audit findings, and never attempt to bypass or override the restriction.
-- Any crawl delay or rate-limiting parameters declared in `robots.txt` are respected.
+### 2. `robots.txt` Reporting vs. Tool Fetch Behaviour
+
+The `crawl-access-audit` worker reads and parses the target site's `robots.txt` and **reports** any disallow rules that would block known AI crawlers (GPTBot, ClaudeBot, etc.) as audit **findings** — this is the core diagnostic output of that worker.
+
+The audit tool's **own** page-sampling fetches use a bounded, low-volume, rate-limited HTTP GET pattern (≤20 fetches per worker, 0.3–0.5 s polite delay between requests, standard browser-like `User-Agent` headers). However, the tool does **not** currently self-gate every fetch against `robots.txt` before sending it. This means the tool may sample pages that a strict `robots.txt` disallow rule would block for crawlers.
+
+> **Known Limitation**: Self-gating the audit tool's own fetches against `robots.txt` is a planned improvement for a future version. Until then, operators should be aware that the audit performs read-only, low-volume sampling regardless of `robots.txt` disallow directives targeting third-party bots. The tool never submits forms, mutates state, or exceeds the per-worker fetch cap.
 
 ### 3. No Authenticated Areas
 - The marketplace inspects only publicly accessible web content.

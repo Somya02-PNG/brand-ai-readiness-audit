@@ -174,7 +174,7 @@ Every audit produces a consolidated JSON report conforming to the required schem
 
 The marketplace enforces strict operational safety guardrails:
 - **Read-Only GET-Only Operations**: All network traffic is strictly confined to read-only HTTP `GET` and `HEAD` requests. No state-mutating requests (`POST`, `PUT`, `DELETE`, `PATCH`) are ever sent.
-- **Respects `robots.txt`**: All crawling components strictly adhere to `robots.txt` disallow rules and rate limits per RFC 9309.
+- **`robots.txt` Audit Reporting**: `crawl-access-audit` reads and reports `robots.txt` disallow rules that would block known AI crawlers as findings. The tool's own page-sampling uses bounded, rate-limited GET requests but does not currently self-gate against `robots.txt` — this is a known limitation documented in [SECURITY.md](SECURITY.md).
 - **No Authenticated Areas**: Audits inspect purely public, unauthenticated web content. The system never accepts, stores, or transmits credentials, cookies, API tokens, or session keys, and never attempts to bypass access controls.
 - **No Site-Altering Actions**: The marketplace never submits forms, initiates checkout transactions, modifies server configurations, or alters remote state.
 - **Per-Worker Fetch Cap of 20**: Each worker enforces a strict ceiling of ≤20 page fetches per audit. Pages containing over 100 internal links are capped at 20 fetches to prevent load spikes on target servers.
