@@ -304,10 +304,10 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
             action=(
                 f"Add missing required properties ({', '.join(missing_required)}) to {schema_type} JSON-LD, "
                 f"populated from server-rendered page data according to schema.org/{schema_type}, "
-                f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                f"because completing required schema.org fields is recommended to strengthen AI citation likelihood and improve entity recognition. "
                 f"Verify: curl -s <url> | grep -i '{missing_required[0]}'."
             ),
-            mechanism=f"AI search engines discard or invalidate {schema_type} entities when required schema.org properties are missing.",
+            mechanism=f"Incomplete {schema_type} schema may reduce how reliably AI search engines recognise and cite this entity type.",
             fix_effort="medium",
             verification=f"curl -s <url> | grep -i '{missing_required[0]}'",
         ))
@@ -328,7 +328,7 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
                 "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
                 f"Verify: curl -s <url> | grep -i '{missing_recommended[0]}'."
             ),
-            mechanism=f"Omitting recommended {schema_type} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+            mechanism=f"Omitting recommended {schema_type} fields may reduce the richness of AI-generated citations and entity card details.",
             fix_effort="medium",
             verification=f"curl -s <url> | grep -i '{missing_recommended[0]}'",
         ))
@@ -349,10 +349,10 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
                     action=(
                         f"Add missing Offer properties ({', '.join(offer_missing)}) to Product JSON-LD, "
                         "populated from backend pricing and inventory systems, "
-                        "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                        "because completing Offer fields (price, priceCurrency, availability) is recommended to help shopping AI agents surface and compare products. "
                         "Verify: curl -s <url> | grep -E 'price|availability'."
                     ),
-                    mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                    mechanism="Completing Offer price, currency, and availability fields is recommended to strengthen AI shopping assistant product recommendations.",
                     fix_effort="low",
                     verification="curl -s <url> | grep -E 'price|availability'",
                 ))
@@ -368,10 +368,10 @@ def check_entity_props(entity: dict, schema_type: str, page_url: str) -> list[di
                 action=(
                     "Populate the mainEntity array in FAQPage JSON-LD with Question and Answer objects, "
                     "populated from server-rendered FAQ Q&A content on the page, "
-                    "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                    "because populated FAQPage mainEntity is recommended to help AI answer engines extract question-answer pairs for conversational grounding. "
                     "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
                 ),
-                mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+                mechanism="Empty FAQPage mainEntity arrays are unlikely to contribute question-answer pairs to AI answer engine responses.",
                 fix_effort="medium",
                 verification="curl -s <url> | grep -i 'acceptedAnswer'",
             ))
@@ -558,10 +558,10 @@ def run(url: str) -> list[dict]:
             action=(
                 "Set @context to 'https://schema.org' across all JSON-LD blocks, "
                 "populated from global schema template constants, "
-                "because AI parsers require the canonical schema.org context vocabulary to resolve linked data types. "
+                "because setting @context to 'https://schema.org' is recommended for AI parsers to reliably resolve linked data types. "
                 "Verify: curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'."
             ),
-            mechanism="AI parsers require the canonical schema.org context URI to interpret semantic types correctly.",
+            mechanism="Using the canonical schema.org context URI is recommended so AI parsers can reliably interpret semantic types.",
             fix_effort="low",
             verification="curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'",
         ))
@@ -575,10 +575,10 @@ def run(url: str) -> list[dict]:
             action=(
                 "Set @context to 'https://schema.org' in the page JSON-LD block, "
                 "populated from global schema template constants, "
-                "because AI parsers require the canonical schema.org context vocabulary to resolve linked data types. "
+                "because setting @context to 'https://schema.org' is recommended for AI parsers to reliably resolve linked data types. "
                 "Verify: curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'."
             ),
-            mechanism="AI parsers require the canonical schema.org context URI to interpret semantic types correctly.",
+            mechanism="Using the canonical schema.org context URI is recommended so AI parsers can reliably interpret semantic types.",
             fix_effort="low",
             verification="curl -s <url> | grep -o '\"@context\":\\s*\"[^\"]*\"'",
         ))
@@ -599,10 +599,10 @@ def run(url: str) -> list[dict]:
                 action=(
                     f"Add required properties ({', '.join(missing_props)}) to {type_label} JSON-LD templates, "
                     f"populated from server-rendered CMS data according to schema.org/{primary_type}, "
-                    f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                    f"because completing required schema.org fields is recommended to strengthen AI citation likelihood and improve entity recognition. "
                     f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
                 ),
-                mechanism=f"AI search engines discard or invalidate {type_label} entities when required schema.org properties are missing.",
+                mechanism=f"Incomplete {type_label} schema may reduce how reliably AI search engines recognise and cite this entity type.",
                 fix_effort="medium",
                 verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
             ))
@@ -620,10 +620,10 @@ def run(url: str) -> list[dict]:
                     action=(
                         f"Add required properties ({', '.join(missing_props)}) to {type_label} JSON-LD, "
                         f"populated from server-rendered page data according to schema.org/{primary_type}, "
-                        f"because AI search crawlers discard incomplete schema entities that lack required specification properties. "
+                        f"because completing required schema.org fields is recommended to strengthen AI citation likelihood and improve entity recognition. "
                         f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
                     ),
-                    mechanism=f"AI search engines discard or invalidate {type_label} entities when required schema.org properties are missing.",
+                    mechanism=f"Incomplete {type_label} schema may reduce how reliably AI search engines recognise and cite this entity type.",
                     fix_effort="medium",
                     verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
                 ))
@@ -646,7 +646,7 @@ def run(url: str) -> list[dict]:
                     "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
                     f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
                 ),
-                mechanism=f"Omitting recommended {type_label} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+                    mechanism=f"Omitting recommended {type_label} fields may reduce the richness of AI-generated citations and entity card details.",
                 fix_effort="medium",
                 verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
             ))
@@ -667,7 +667,7 @@ def run(url: str) -> list[dict]:
                         "because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. "
                         f"Verify: curl -s <url> | grep -i '{missing_props[0]}'."
                     ),
-                    mechanism=f"Omitting recommended {type_label} fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+                        mechanism=f"Omitting recommended {type_label} fields may reduce the richness of AI-generated citations and entity card details.",
                     fix_effort="medium",
                     verification=f"curl -s <url> | grep -i '{missing_props[0]}'",
                 ))
@@ -686,10 +686,10 @@ def run(url: str) -> list[dict]:
                 action=(
                     f"Add missing Offer properties ({', '.join(missing_props)}) to product schema templates, "
                     "populated from backend pricing and inventory systems, "
-                    "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                    "because completing Offer fields (price, priceCurrency, availability) is recommended to help shopping AI agents surface and compare products. "
                     "Verify: curl -s <url> | grep -E 'price|availability'."
                 ),
-                mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                mechanism="Completing Offer price, currency, and availability fields is recommended to strengthen AI shopping assistant product recommendations.",
                 fix_effort="low",
                 verification="curl -s <url> | grep -E 'price|availability'",
             ))
@@ -705,10 +705,10 @@ def run(url: str) -> list[dict]:
                     action=(
                         f"Add missing Offer properties ({', '.join(missing_props)}) to Product JSON-LD, "
                         "populated from backend pricing and inventory systems, "
-                        "because shopping AI agents require explicit price, priceCurrency, and availability to recommend products. "
+                        "because completing Offer fields (price, priceCurrency, availability) is recommended to help shopping AI agents surface and compare products. "
                         "Verify: curl -s <url> | grep -E 'price|availability'."
                     ),
-                    mechanism="AI shopping assistants cannot surface products or compare pricing without explicit Offer price, currency, and availability schema.",
+                    mechanism="Completing Offer price, currency, and availability fields is recommended to strengthen AI shopping assistant product recommendations.",
                     fix_effort="low",
                     verification="curl -s <url> | grep -E 'price|availability'",
                 ))
@@ -723,10 +723,10 @@ def run(url: str) -> list[dict]:
             action=(
                 "Populate the mainEntity array in FAQPage JSON-LD templates with Question and Answer objects, "
                 "populated from server-rendered FAQ content across affected pages, "
-                "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                "because populated FAQPage mainEntity is recommended to help AI answer engines extract question-answer pairs for conversational grounding. "
                 "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
             ),
-            mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+            mechanism="Empty FAQPage mainEntity arrays are unlikely to contribute question-answer pairs to AI answer engine responses.",
             fix_effort="medium",
             verification="curl -s <url> | grep -i 'acceptedAnswer'",
         ))
@@ -739,10 +739,10 @@ def run(url: str) -> list[dict]:
                 action=(
                     "Populate the mainEntity array in FAQPage JSON-LD with Question and Answer objects, "
                     "populated from server-rendered FAQ Q&A content on the page, "
-                    "because AI crawlers ignore empty FAQPage structures and cannot extract question-answer pairs for direct grounding. "
+                    "because populated FAQPage mainEntity is recommended to help AI answer engines extract question-answer pairs for conversational grounding. "
                     "Verify: curl -s <url> | grep -i 'acceptedAnswer'."
                 ),
-                mechanism="AI answer engines ignore empty FAQPage schema and cannot extract question-answer pairs for direct grounding.",
+                mechanism="Empty FAQPage mainEntity arrays are unlikely to contribute question-answer pairs to AI answer engine responses.",
                 fix_effort="medium",
                 verification="curl -s <url> | grep -i 'acceptedAnswer'",
             ))
@@ -763,10 +763,10 @@ def run(url: str) -> list[dict]:
             action=(
                 "Implement schema.org JSON-LD markup inside the <head> of all page templates, "
                 "populated from server-rendered CMS data starting with Organization on the homepage and Product or Article on detail pages, "
-                "because AI crawlers fetch raw HTML without executing client-side scripts and cannot extract unstructured page concepts. "
+                "because structured JSON-LD markup in raw HTML is strongly recommended to help AI crawlers identify entities and strengthen brand citation likelihood. "
                 "Verify: curl -s <url> | grep -i 'application/ld+json'."
             ),
-            mechanism="AI search bots rely on raw HTML JSON-LD to index entities and will miss brand semantics when structured markup is absent.",
+            mechanism="AI search bots rely on raw HTML JSON-LD to identify entities; pages without structured markup make brand semantic signals harder to extract.",
             fix_effort="high",
             verification="curl -s <url> | grep -i 'application/ld+json'",
         ))
@@ -781,10 +781,10 @@ def run(url: str) -> list[dict]:
             action=(
                 "Extend schema.org JSON-LD markup to unannotated page templates, "
                 "populated from server-rendered CMS page metadata across product, article, and FAQ pages, "
-                "because AI agents cannot verify semantic entity attributes on pages lacking structured data. "
+                "because structured markup on all page types is recommended to help AI agents reliably identify semantic entity attributes. "
                 "Verify: curl -s <url> | grep -i 'application/ld+json'."
             ),
-            mechanism="Pages lacking schema markup cannot be reliably interpreted as distinct entity types by AI search engines.",
+            mechanism="Pages lacking schema markup make it harder for AI search engines to reliably interpret them as distinct entity types.",
             fix_effort="medium",
             verification="curl -s <url> | grep -i 'application/ld+json'",
         ))
@@ -814,10 +814,10 @@ def run(url: str) -> list[dict]:
                 action=(
                     "Add Product + Offer JSON-LD inside <head> on every product page, "
                     "populated from server-rendered HTML (not JS-injected) including name, sku, offers.price, offers.priceCurrency, offers.availability, brand, image, "
-                    "because GPTBot and ClaudeBot fetch raw HTML without executing JS making JS-injected schema invisible to them. "
+                    "because server-rendered Product schema is recommended so that AI crawlers like GPTBot and ClaudeBot, which fetch raw HTML without executing JS, can identify product entities and strengthen citation likelihood. "
                     "Verify: curl -A 'GPTBot' <url> | grep -i '\"@type\":\\s*\"Product\"'."
                 ),
-                mechanism="GPTBot and ClaudeBot fetch raw HTML without executing JS, so JS-injected or absent schema is invisible to them.",
+                mechanism="GPTBot and ClaudeBot fetch raw HTML without executing JS; server-rendered Product schema is recommended for them to recognise product entities.",
                 fix_effort="high",
                 verification="curl -A 'GPTBot' <url> | grep -i '\"@type\":\\s*\"Product\"'",
             ))
@@ -833,10 +833,10 @@ def run(url: str) -> list[dict]:
                 action=(
                     "Add Article or BlogPosting JSON-LD inside <head> on all blog and article pages, "
                     "populated from server-rendered editorial metadata including headline, datePublished, dateModified, author, and image, "
-                    "because AI assistants rely on structured Article schema in raw HTML to attribute authorship and evaluate content freshness. "
+                    "because structured Article schema in raw HTML is recommended to help AI assistants attribute authorship and evaluate content freshness. "
                     "Verify: curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'."
                 ),
-                mechanism="AI search assistants rely on Article JSON-LD in initial HTML to attribute authored content and evaluate topical relevance.",
+                mechanism="Structured Article JSON-LD in initial HTML helps AI search assistants attribute authored content and assess topical relevance.",
                 fix_effort="medium",
                 verification="curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'",
             ))

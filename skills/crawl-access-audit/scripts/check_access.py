@@ -481,11 +481,11 @@ def audit_llms_txt(base_url: str) -> list[dict]:
             "a curated, structured markdown summary of their content and documentation for LLMs."
         ),
         action=(
-            f"Publish an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, "
-            "because emerging AI reasoning agents consume /llms.txt as an optimized digest of site capabilities without crawling overhead. "
+            f"Consider publishing an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, "
+            "because emerging AI reasoning agents can use /llms.txt as an optimized digest of site capabilities, which may strengthen AI citation likelihood. "
             f"Verify: curl -sI {llms_url} | grep 'HTTP/'."
         ),
-        mechanism="Absence of an /llms.txt file deprives LLM agents of a lightweight, standardized summary of brand offerings.",
+        mechanism="Publishing /llms.txt is a recommended emerging convention (llmstxt.org) that can help AI agents more efficiently summarise brand capabilities.",
         fix_effort="low",
         verification=f"curl -sI {llms_url}",
     ))
