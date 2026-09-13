@@ -17,6 +17,8 @@ Returns schema-compliant JSON to stdout (or file if --output specified).
 import sys
 import json
 import argparse
+import ipaddress
+import socket
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -83,6 +85,56 @@ def normalize_url(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     return url.rstrip("/")
+
+
+# Private / loopback / link-local networks that must never be audited
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),    # loopback
+    ipaddress.ip_network("10.0.0.0/8"),     # private class A
+    ipaddress.ip_network("172.16.0.0/12"),  # private class B
+    ipaddress.ip_network("192.168.0.0/16"), # private class C
+    ipaddress.ip_network("169.254.0.0/16"), # link-local (APIPA)
+    ipaddress.ip_network("::1/128"),         # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),        # IPv6 unique-local (ULA)
+    ipaddress.ip_network("fe80::/10"),       # IPv6 link-local
+]
+
+
+def assert_public_url(url: str) -> None:
+    """
+    Gate function: resolve the URL's hostname and raise ValueError if any
+    returned IP address falls within a private, loopback, or link-local range.
+
+    Must be called once before dispatching any worker skill.
+    Raises ValueError with a descriptive message on rejection.
+    """
+    parsed = urlparse(url)
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError(f"Cannot determine hostname from URL: {url!r}")
+
+    try:
+        addr_infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as exc:
+        raise ValueError(
+            f"Hostname resolution failed for {hostname!r}: {exc}. "
+            "Provide a publicly reachable domain."
+        ) from exc
+
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        raw_ip = sockaddr[0]  # first element is always the IP string
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue  # unparseable address — skip silently
+
+        for network in _PRIVATE_NETWORKS:
+            if ip in network:
+                raise ValueError(
+                    f"Audit target '{hostname}' resolves to a private/loopback/link-local "
+                    f"address ({ip}), which is not permitted. "
+                    "Only publicly routable internet addresses may be audited."
+                )
 
 
 def get_site(url: str) -> str:
@@ -628,6 +680,12 @@ def run(url: str) -> dict:
     Workers run in parallel threads for speed.
     """
     url = normalize_url(url)
+
+    # ── SSRF / private-network gate ───────────────────────────────────────────
+    # Resolves the hostname and rejects any private, loopback, or link-local IP
+    # before a single worker fetch is dispatched.
+    assert_public_url(url)
+    # ─────────────────────────────────────────────────────────────────────────
 
     # Pre-allocate results slots
     results = [None] * len(WORKER_SKILLS)
