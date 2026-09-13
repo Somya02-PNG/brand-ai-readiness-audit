@@ -106,15 +106,16 @@ def test_schema_compliance_real_merge_report_output(monkeypatch):
     assert report["site"] == "example.com"
     assert ISO_UTC_REGEX.match(report["audited_at"]), f"audited_at must be ISO 8601 UTC with trailing Z: {report['audited_at']}"
 
-    # 2. summary has total_findings, critical, high, medium, low
+    # 2. summary has total_findings, critical, high, medium, low, coverage_gaps
     summary = report["summary"]
-    expected_summary_keys = {"total_findings", "critical", "high", "medium", "low"}
+    expected_summary_keys = {"total_findings", "critical", "high", "medium", "low", "coverage_gaps"}
     assert set(summary.keys()) == expected_summary_keys, f"Summary keys mismatch: {set(summary.keys())}"
     assert summary["total_findings"] == 4
     assert summary["critical"] == 1
     assert summary["high"] == 1
     assert summary["medium"] == 1
     assert summary["low"] == 1
+    assert summary["coverage_gaps"] == 0
 
     # 3. every finding has id, title, severity, evidence, suggested_action (object), mechanism, fix_effort, verification
     findings = report["findings"]

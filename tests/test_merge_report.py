@@ -126,3 +126,20 @@ def test_orchestrator_run_merges_all_workers(monkeypatch):
     assert len(report["beyond_problem_suggestions"]) >= 2
 
 
+def test_compute_summary_separates_coverage_gaps():
+    """Assert compute_summary excludes coverage_gap: True findings from total_findings and severities, counting them under coverage_gaps."""
+    findings = [
+        {"title": "Real Critical", "severity": "critical"},
+        {"title": "Real Medium", "severity": "medium"},
+        {"title": "Real Low", "severity": "low"},
+        {"title": "Worker Timeout Fallback", "severity": "low", "coverage_gap": True},
+        {"title": "Worker Error Fallback", "severity": "low", "coverage_gap": True},
+    ]
+
+    summary = merge_report.compute_summary(findings)
+    assert summary["total_findings"] == 3
+    assert summary["critical"] == 1
+    assert summary["high"] == 0
+    assert summary["medium"] == 1
+    assert summary["low"] == 1
+    assert summary["coverage_gaps"] == 2
