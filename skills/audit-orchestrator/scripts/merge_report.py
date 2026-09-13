@@ -218,6 +218,10 @@ def normalize_finding(raw: dict) -> dict:
         "verification": verification,
     }
 
+    # Preserve coverage_gap flag if set by a worker-failure path
+    if raw.get("coverage_gap"):
+        finding["coverage_gap"] = True
+
     return finding
 
 
@@ -493,6 +497,7 @@ def run_worker(
             "severity": "low",
             "category": "discoverability",
             "skill_source": display_name,
+            "coverage_gap": True,  # worker failure — not a website defect
             "evidence": (
                 f"Worker skill '{display_name}' raised an exception and could not complete. "
                 f"Error: {type(exc).__name__}: {exc}. "
@@ -514,12 +519,16 @@ def run_worker(
 
 
 def make_fallback_finding(display_name: str = "worker-skill") -> dict:
-    """Generate a fallback low-severity finding when a worker returns nothing or times out."""
+    """Generate a fallback finding when a worker returns nothing or times out.
+
+    Tagged with coverage_gap=True to distinguish it from genuine website defects.
+    """
     return {
         "title": f"{display_name} timed out or returned no findings",
         "severity": "low",
         "category": "discoverability",
         "skill_source": display_name,
+        "coverage_gap": True,  # worker failure — not a website defect
         "evidence": (
             f"Worker skill '{display_name}' did not complete within the time budget or returned no findings. "
             "Partial results excluded."
