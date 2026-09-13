@@ -1,6 +1,7 @@
 # Brand AI-Readiness Audit Marketplace
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Somya02-PNG/brand-ai-readiness-audit/ci.yml?branch=main&label=CI)](https://github.com/Somya02-PNG/brand-ai-readiness-audit/actions/workflows/ci.yml)
+![tests](https://github.com/Somya02-PNG/brand-ai-readiness-audit/actions/workflows/ci.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
