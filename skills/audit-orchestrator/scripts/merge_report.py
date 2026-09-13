@@ -272,21 +272,19 @@ def assign_ids(findings: list[dict]) -> list[dict]:
 
 
 def compute_summary(findings: list[dict]) -> dict:
+    real_findings = [f for f in findings if not f.get("coverage_gap")]
+    gap_findings = [f for f in findings if f.get("coverage_gap")]
     counts = {
-        "total_findings": 0,
+        "total_findings": len(real_findings),
         "critical": 0,
         "high": 0,
         "medium": 0,
         "low": 0,
-        "coverage_gaps": 0,
+        "coverage_gaps": len(gap_findings),
     }
-    for f in findings:
-        if f.get("coverage_gap") is True:
-            counts["coverage_gaps"] += 1
-            continue
-        counts["total_findings"] += 1
+    for f in real_findings:
         sev = f.get("severity", "low").lower()
-        if sev in ("critical", "high", "medium", "low"):
+        if sev in counts:
             counts[sev] += 1
         else:
             counts["low"] += 1
