@@ -751,7 +751,7 @@ def run(url: str) -> list[dict]:
     no_markup_pct = len(pages_without_jsonld) / total_pages * 100 if total_pages else 0
 
     # Summary: no markup
-    if no_markup_pct >= 80:
+    if len(pages_without_jsonld) == total_pages:
         findings.insert(0, make_finding(
             title=f"0 of {total_pages} pages contain any schema.org JSON-LD",
             severity="critical",

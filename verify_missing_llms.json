@@ -1,0 +1,181 @@
+{
+  "site": "www.olivegarden.com",
+  "audited_at": "2026-09-13T06:12:24Z",
+  "summary": {
+    "total_findings": 10,
+    "critical": 1,
+    "high": 5,
+    "medium": 1,
+    "low": 3
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "0 of 12 pages contain any schema.org JSON-LD",
+      "severity": "critical",
+      "evidence": "Sampled 12 pages; 12/12 (100%) have no <script type='application/ld+json'> block. Checked pages include: /, /about-us/news-and-media, /about-us/community, /about-us, /faqs, /contact-us, /receipt, /locations/location-search.",
+      "suggested_action": {
+        "summary": "Implement schema.org JSON-LD markup inside the <head> of all page templates, populated from server-rendered CMS data starting with Organization on the homepage and Product or Article on detail pages, because AI crawlers fetch raw HTML without executing client-side scripts and cannot extract unstructured page concepts. Verify: curl -s <url> | grep -i 'application/ld+json'.",
+        "priority": "critical"
+      },
+      "mechanism": "AI search bots rely on raw HTML JSON-LD to index entities and will miss brand semantics when structured markup is absent.",
+      "fix_effort": "high",
+      "verification": "curl -s <url> | grep -i 'application/ld+json'"
+    },
+    {
+      "id": "F-002",
+      "title": "No Organization JSON-LD found on any crawled page",
+      "severity": "high",
+      "evidence": "Crawled 12 pages. No JSON-LD with @type Organization, LocalBusiness, or equivalent was found. AI assistants use Organization markup as the primary entity anchor for a brand.",
+      "suggested_action": {
+        "summary": "Embed Organization JSON-LD inside the homepage head, populated from corporate identity records including name, legalName, url, logo, description, and sameAs, because AI agents inspect root structured data to anchor brand knowledge graph nodes. Verify: curl -s <url> | grep -i '\"@type\":\\s*\"Organization\"'.",
+        "priority": "high"
+      },
+      "mechanism": "Without root Organization schema, LLM crawlers lack an authoritative entity anchor to resolve brand attributes.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -i '\"@type\":\\s*\"Organization\"'"
+    },
+    {
+      "id": "F-003",
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "evidence": "Checked 15 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add dateModified and datePublished timestamps to JSON-LD and page meta tags, populated from CMS publication and revision timestamps, because AI search crawlers deprioritize unversioned content during real-time retrieval when freshness cannot be determined. Verify: curl -s <url> | grep -Ei 'dateModified|article:modified_time'.",
+        "priority": "high"
+      },
+      "mechanism": "AI search crawlers deprioritize unversioned content during real-time retrieval because they cannot determine whether facts are current.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -Ei 'dateModified|article:modified_time'"
+    },
+    {
+      "id": "F-004",
+      "title": "No sameAs links in any JSON-LD block",
+      "severity": "high",
+      "evidence": "Crawled 12 pages including homepage and /about. 0 pages contain a 'sameAs' property in any JSON-LD entity. Without sameAs, AI knowledge graphs cannot confidently link this site to its verified external identity on Wikidata, LinkedIn, or Crunchbase.",
+      "suggested_action": {
+        "summary": "Add a sameAs array to Organization JSON-LD on the homepage, populated from official corporate profiles on LinkedIn, Crunchbase, and Wikidata, because LLM knowledge graphs rely on canonical sameAs URIs to disambiguate brands from similarly named entities. Verify: curl -s <url> | grep -o '\"sameAs\":\\s*\\[[^\\]]*\\]'.",
+        "priority": "high"
+      },
+      "mechanism": "AI models cannot link the brand to authoritative knowledge graph nodes without canonical sameAs entity identifiers.",
+      "fix_effort": "low",
+      "verification": "curl -s <url> | grep -o '\"sameAs\":\\s*\\[[^\\]]*\\]'"
+    },
+    {
+      "id": "F-005",
+      "title": "Phone number inconsistency — 48 distinct values across pages",
+      "severity": "high",
+      "evidence": "Found 48 different phone numbers across 15 pages. Details: '2046612387' on 1 page(s): https://www.olivegarden.com/international; '2046618129' on 1 page(s): https://www.olivegarden.com/international; '2047749725' on 1 page(s): https://www.olivegarden.com/international; '2047759310' on 1 page(s): https://www.olivegarden.com/international; '2123333254' on 8 page(s): https://www.olivegarden.com, https://www.olivegarden.com/about-us, https://www.olivegarden.com/about-us/community; '2128864100' on 1 page(s): https://www.olivegarden.com/faqs; '2975236888' on 1 page(s): https://www.olivegarden.com/international; '3065250661' on 1 page(s): https://www.olivegarden.com/international; '3066680088' on 1 page(s): https://www.olivegarden.com/international; '3655272919' on 1 page(s): https://www.olivegarden.com/international; '4032481020' on 1 page(s): https://www.olivegarden.com/international; '4032481369' on 1 page(s): https://www.olivegarden.com/international; '4072454400' on 1 page(s): https://www.olivegarden.com/faqs; '4072454555' on 1 page(s): https://www.olivegarden.com/faqs; '4072455312' on 2 page(s): https://www.olivegarden.com/faqs, https://www.olivegarden.com/about-us/news-and-media; '4423251072' on 1 page(s): https://www.olivegarden.com/international; '50322431177' on 1 page(s): https://www.olivegarden.com/international; '50622088988' on 1 page(s): https://www.olivegarden.com/international; '50644043778' on 1 page(s): https://www.olivegarden.com/international; '5072002283' on 1 page(s): https://www.olivegarden.com/international; '5072731001' on 1 page(s): https://www.olivegarden.com/international; '5073828813' on 1 page(s): https://www.olivegarden.com/international; '50762850073' on 1 page(s): https://www.olivegarden.com/international; '6045143418' on 1 page(s): https://www.olivegarden.com/international; '6045143499' on 1 page(s): https://www.olivegarden.com/international; '639951811081' on 1 page(s): https://www.olivegarden.com/international; '6719893527' on 1 page(s): https://www.olivegarden.com/international; '7804360708' on 1 page(s): https://www.olivegarden.com/international; '7804373434' on 1 page(s): https://www.olivegarden.com/international; '7804811692' on 1 page(s): https://www.olivegarden.com/international; '7804840700' on 1 page(s): https://www.olivegarden.com/international; '7873957044' on 1 page(s): https://www.olivegarden.com/international; '7875457427' on 1 page(s): https://www.olivegarden.com/international; '7877055800' on 1 page(s): https://www.olivegarden.com/international; '7877102500' on 1 page(s): https://www.olivegarden.com/international; '7877384220' on 1 page(s): https://www.olivegarden.com/international; '7877751568' on 1 page(s): https://www.olivegarden.com/international; '7877753779' on 1 page(s): https://www.olivegarden.com/international; '7879708747' on 1 page(s): https://www.olivegarden.com/international; '8002484935' on 1 page(s): https://www.olivegarden.com/faqs; '8003312729' on 2 page(s): https://www.olivegarden.com/faqs, https://www.olivegarden.com/about-us/news-and-media; '8003672884' on 1 page(s): https://www.olivegarden.com/faqs; '8086702766' on 1 page(s): https://www.olivegarden.com/international; '8089422000' on 1 page(s): https://www.olivegarden.com/international; '8882210642' on 1 page(s): https://www.olivegarden.com/faqs; '8883743343' on 1 page(s): https://www.olivegarden.com/faqs; '8888883341' on 1 page(s): https://www.olivegarden.com/faqs; '9951811081' on 1 page(s): https://www.olivegarden.com/international. Inconsistent contact info causes AI models to distrust the site's data.",
+      "suggested_action": {
+        "summary": "Standardize contact telephone numbers to a single canonical value, populated from official corporate contact directory using E.164 format, because conflicting phone numbers across pages degrade AI confidence in business contact legitimacy. Verify: curl -s <url> | grep -Eo '\\+?[0-9]{1,3}[- .]?[0-9]{3}[- .]?[0-9]{3}[- .]?[0-9]{4}'.",
+        "priority": "high"
+      },
+      "mechanism": "Conflicting phone numbers across page templates degrade AI confidence in business contact legitimacy.",
+      "fix_effort": "low",
+      "verification": "curl -s <url> | grep -Eo '\\+?[0-9]{1,3}[- .]?[0-9]{3}[- .]?[0-9]{3}[- .]?[0-9]{4}'"
+    },
+    {
+      "id": "F-006",
+      "title": "Physical address inconsistency — 15 variants found",
+      "severity": "high",
+      "evidence": "Found 15 distinct address strings across pages. Details: '0073 Town Center Costa del Este Ave' on: https://www.olivegarden.com/international; '1 Bass Pro Mills Dr' on: https://www.olivegarden.com/international; '1300 Seaside Blvd' on: https://www.olivegarden.com/international; '1369 Stony Plain Rd' on: https://www.olivegarden.com/international. Address inconsistency is a strong negative signal for AI confidence in local business data.",
+      "suggested_action": {
+        "summary": "Standardize physical postal addresses across all footer and contact templates, populated from corporate headquarters registry records into Organization or LocalBusiness JSON-LD, because divergent location strings cause AI models to treat local business entity claims as untrustworthy. Verify: curl -s <url> | grep -i '\"postalCode\"'.",
+        "priority": "high"
+      },
+      "mechanism": "Divergent location strings across pages cause AI models to treat local business entity claims as untrustworthy.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -i '\"postalCode\"'"
+    },
+    {
+      "id": "F-007",
+      "title": "Blog/article pages detected but no Article JSON-LD found",
+      "severity": "medium",
+      "evidence": "URL patterns suggest this site has blog or article pages, but no Article or BlogPosting JSON-LD was found. AI assistants rely on Article markup to properly attribute authored content.",
+      "suggested_action": {
+        "summary": "Add Article or BlogPosting JSON-LD inside <head> on all blog and article pages, populated from server-rendered editorial metadata including headline, datePublished, dateModified, author, and image, because AI assistants rely on structured Article schema in raw HTML to attribute authorship and evaluate content freshness. Verify: curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'.",
+        "priority": "medium"
+      },
+      "mechanism": "AI search assistants rely on Article JSON-LD in initial HTML to attribute authored content and evaluate topical relevance.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -i '\"@type\":\\s*\"Article\"'"
+    },
+    {
+      "id": "F-008",
+      "title": "About page lacks sufficient disambiguating identity facts (score: 0/6)",
+      "severity": "low",
+      "evidence": "About page: https://www.olivegarden.com/about-us. Detected disambiguating facts: none. Missing categories: founding year, location hq, industry vertical, team size, customer count, geographic reach. Generic About pages increase the risk of AI entity confusion.",
+      "suggested_action": {
+        "summary": "Expand the About page with concrete entity attributes, populated from corporate records covering founding year, HQ location, executive leadership, and industry classification, because vague marketing copy prevents AI systems from extracting factual entity triples. Verify: curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'.",
+        "priority": "low"
+      },
+      "mechanism": "Abstract marketing text without factual timestamps, locations, or organizational structure prevents LLMs from synthesizing reliable entity profiles.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'"
+    },
+    {
+      "id": "F-009",
+      "title": "No /llms.txt file found at site root",
+      "severity": "low",
+      "evidence": "GET https://www.olivegarden.com/llms.txt returned unreachable. /llms.txt is an emerging web convention (llmstxt.org) where sites publish a curated, structured markdown summary of their content and documentation for LLMs.",
+      "suggested_action": {
+        "summary": "Publish an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, because emerging AI reasoning agents consume /llms.txt as an optimized digest of site capabilities without crawling overhead. Verify: curl -sI https://www.olivegarden.com/llms.txt | grep 'HTTP/'.",
+        "priority": "low"
+      },
+      "mechanism": "Absence of an /llms.txt file deprives LLM agents of a lightweight, standardized summary of brand offerings.",
+      "fix_effort": "low",
+      "verification": "curl -sI https://www.olivegarden.com/llms.txt"
+    },
+    {
+      "id": "F-010",
+      "title": "Render check blocked/unreachable for 4 pages",
+      "severity": "low",
+      "evidence": "Playwright attempted to render 4 page(s) but every attempt timed out or failed to load (timeout: 15s). Affected URLs:\n  - https://www.olivegarden.com\n  - https://www.olivegarden.com/receipt\n  - https://www.olivegarden.com/locations/location-search\n  - https://www.olivegarden.com/about-us/community\nThis may indicate bot-detection, a WAF challenge, or extreme page latency. Render-gap analysis was skipped for these pages.",
+      "suggested_action": {
+        "summary": "Whitelist known AI crawler user-agents in your WAF and CDN bot protection rules, populated from edge security firewall configurations, because aggressive bot mitigation blocks legitimate search and AI agents from reading pages. Verify: curl -s -A 'GPTBot' <url> returns HTTP 200.",
+        "priority": "low"
+      },
+      "mechanism": "Firewall and bot challenges prevent AI assistants from indexing page content.",
+      "fix_effort": "low",
+      "verification": "curl -s -A 'GPTBot' <url>"
+    }
+  ],
+  "beyond_problem_suggestions": [
+    {
+      "title": "Cross-link verified entity profiles across independent authority platforms via sameAs",
+      "rationale": "Independent corroboration across Wikipedia, Crunchbase, LinkedIn, and Wikidata validates brand legitimacy and feeds entity resolution algorithms in knowledge graph construction (Appendix D/B).",
+      "mechanism": "LLM knowledge engines construct high-confidence entity nodes by resolving bidirectional sameAs references across independent high-authority knowledge bases.",
+      "priority": "high"
+    },
+    {
+      "title": "Publish a canonical facts page with unambiguous declarative plain-text assertions",
+      "rationale": "A dedicated /facts or /about page presenting one unambiguous plain-text sentence per core attribute (founding date, headquarters, leadership, core products) eliminates extraction ambiguity for LLM crawlers (Appendix C).",
+      "mechanism": "Declarative single-fact sentences minimize semantic parsing entropy during retrieval-augmented generation (RAG) and prevent hallucinated brand claims.",
+      "priority": "high"
+    },
+    {
+      "title": "Structure conversational FAQ sections with question-shaped headings matching user prompts",
+      "rationale": "Formulating headings as explicit natural-language questions directly mirrors user prompt patterns submitted to AI search engines (Appendix B).",
+      "mechanism": "Question-formatted headings maximize semantic vector cosine similarity against conversational user queries, triggering direct answer citations.",
+      "priority": "medium"
+    },
+    {
+      "title": "Implement hreflang annotations and locale-specific schema for regional disambiguation",
+      "rationale": "Explicit hreflang link tags and localized schema markup distinguish regional product lines, currencies, and language variations for global AI assistants (Appendix E).",
+      "mechanism": "Locale and alternate tags prevent search bots from conflating regional entities or surfacing incorrect currency and availability in localized AI answers.",
+      "priority": "medium"
+    },
+    {
+      "title": "Embed machine-readable TL;DR summary blocks at the top of transactional emails",
+      "rationale": "AI email summarizers (e.g., Apple Intelligence, Gemini in Gmail, Copilot) generate automatic summaries based on early email tokens, requiring key details upfront (Appendix F).",
+      "mechanism": "Structured key-value summary blocks at the beginning of email HTML ensure client-side AI summarizers extract order numbers, dates, and actions without truncation errors.",
+      "priority": "low"
+    },
+    {
+      "title": "Maintain accurate <lastmod> timestamps in sitemap.xml to signal content freshness",
+      "rationale": "Including precise, genuine <lastmod> dates in sitemap.xml enables AI crawlers with limited crawl budgets to discover and ingest fresh updates promptly (Appendix A).",
+      "mechanism": "AI search engines prioritize re-crawling URLs with recent sitemap <lastmod> timestamps, keeping their retrieval indexes and vector embeddings synchronized.",
+      "priority": "medium"
+    }
+  ]
+}

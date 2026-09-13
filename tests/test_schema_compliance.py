@@ -302,7 +302,7 @@ def test_worker_findings_follow_suggested_action_pattern(repo_root):
 def test_example_audit_reports_schema_compliance(repo_root):
     """
     Validates that all example audit JSON reports (e.g. blog, ecommerce, saas)
-    comply strictly with the report schema floor (integrates validate_schema.py).
+    comply strictly with the report schema floor.
     """
     import json
     import glob

@@ -1,0 +1,168 @@
+{
+  "site": "www.thekalesh.com",
+  "audited_at": "2026-09-13T06:04:56Z",
+  "summary": {
+    "total_findings": 9,
+    "critical": 0,
+    "high": 4,
+    "medium": 4,
+    "low": 1
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "100.0% of content on / absent from raw HTML",
+      "severity": "high",
+      "evidence": "Raw HTML: 0 words. Playwright-rendered: 234 words. Render gap: 100.0% of rendered words absent from raw crawler view. Affected URL: https://www.thekalesh.com",
+      "suggested_action": {
+        "summary": "Render core body text and metadata on the server for https://www.thekalesh.com, populated from server-rendered templates (e.g. Next.js SSR/SSG), because 100.0% of content on this page requires JavaScript execution and is invisible to AI crawlers. Verify: curl -s https://www.thekalesh.com | grep -o '<p[^>]*>.*</p>'.",
+        "priority": "high"
+      },
+      "mechanism": "AI assistants relying on initial HTTP responses miss high-value product or editorial text that is rendered purely on the client.",
+      "fix_effort": "high",
+      "verification": "curl -s https://www.thekalesh.com | wc -w"
+    },
+    {
+      "id": "F-002",
+      "title": "No <h1> heading on homepage",
+      "severity": "high",
+      "evidence": "Homepage (https://www.thekalesh.com) raw HTML contains 0 <h1> elements. Without an H1, visitors and AI parsers cannot determine the page's primary topic within the first few seconds.",
+      "suggested_action": {
+        "summary": "Add a clear, descriptive <h1> heading above the fold, populated from brand positioning copy in the homepage hero section, because AI answer extractors look for <h1> as the primary topic definition of the entire domain. Verify: curl -s https://www.thekalesh.com | grep -i '<h1'.",
+        "priority": "high"
+      },
+      "mechanism": "Missing H1 headings prevent AI summarizers from rapidly determining the core purpose and value proposition of the site.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.thekalesh.com | grep -i '<h1'"
+    },
+    {
+      "id": "F-003",
+      "title": "No <nav> element on homepage",
+      "severity": "high",
+      "evidence": "Homepage (https://www.thekalesh.com) raw HTML contains no <nav> element. Without semantic navigation markup, screen readers, bots, and AI parsers cannot identify the site's navigation structure.",
+      "suggested_action": {
+        "summary": "Wrap primary site navigation links in a semantic <nav aria-label='Main navigation'> element, populated from your header template layout, because AI parser agents rely on semantic HTML5 landmarks to distinguish main navigational hierarchies from page body text. Verify: curl -s https://www.thekalesh.com | grep -i '<nav'.",
+        "priority": "high"
+      },
+      "mechanism": "Absence of semantic navigation elements hinders AI screen readers and bots from identifying site structure.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.thekalesh.com | grep -i '<nav'"
+    },
+    {
+      "id": "F-004",
+      "title": "No content freshness signals found on any page",
+      "severity": "high",
+      "evidence": "Checked 11 pages. 0 pages contain dateModified, datePublished (JSON-LD), article:modified_time, or og:updated_time (meta tags). AI crawlers cannot determine whether this site's content is current.",
+      "suggested_action": {
+        "summary": "Add dateModified and datePublished timestamps to JSON-LD and page meta tags, populated from CMS publication and revision timestamps, because AI search crawlers deprioritize unversioned content during real-time retrieval when freshness cannot be determined. Verify: curl -s <url> | grep -Ei 'dateModified|article:modified_time'.",
+        "priority": "high"
+      },
+      "mechanism": "AI search crawlers deprioritize unversioned content during real-time retrieval because they cannot determine whether facts are current.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -Ei 'dateModified|article:modified_time'"
+    },
+    {
+      "id": "F-005",
+      "title": "No call-to-action detected above the fold on homepage",
+      "severity": "medium",
+      "evidence": "Scanned the first 25% of homepage (https://www.thekalesh.com) HTML body for CTA keywords (get started, start free, sign up, signup, try for free, try free, free trial, buy now...). None found in above-fold region. Visitors arriving from AI assistant recommendations need an immediate next action.",
+      "suggested_action": {
+        "summary": "Insert a prominent CTA button in the hero area, populated from your primary conversion goal (e.g. 'Get Started', 'Start Free Trial'), because users arriving from AI recommendations need an immediate conversion pathway without scrolling. Verify: curl -s https://www.thekalesh.com contains an above-fold button or link with action text.",
+        "priority": "medium"
+      },
+      "mechanism": "Absence of above-the-fold calls-to-action reduces user engagement and conversion from AI-directed traffic.",
+      "fix_effort": "low",
+      "verification": "curl -s https://www.thekalesh.com | grep -iE 'btn|button|cta'"
+    },
+    {
+      "id": "F-006",
+      "title": "Organization JSON-LD missing 'legalName'",
+      "severity": "medium",
+      "evidence": "Found Organization JSON-LD on 8 page(s) but none declare 'legalName'. Brand name in JSON-LD: 'Kalesh'. Without legalName, AI models cannot distinguish between organizations sharing a similar short brand name.",
+      "suggested_action": {
+        "summary": "Add the legalName property to Organization JSON-LD in the homepage head, populated from corporate registration filings, because AI models require the full registered corporate name to differentiate brands with generic or colloquial trade names. Verify: curl -s <url> | grep -i '\"legalName\"'.",
+        "priority": "medium"
+      },
+      "mechanism": "LLMs frequently confuse brands that share colloquial or generic trade names unless the exact registered corporate legalName is declared.",
+      "fix_effort": "low",
+      "verification": "curl -s <url> | grep -i '\"legalName\"'"
+    },
+    {
+      "id": "F-007",
+      "title": "Organization JSON-LD missing high-value recommended properties on /",
+      "severity": "medium",
+      "evidence": "Page: https://www.thekalesh.com. Organization JSON-LD present and required fields satisfied, but missing recommended fields: description, legalName. These fields significantly improve AI citation quality.",
+      "suggested_action": {
+        "summary": "Add recommended properties (description, legalName) to Organization JSON-LD, populated from authoritative entity attributes and CMS metadata, because rich semantic attributes allow AI models to synthesize detailed citations and entity cards. Verify: curl -s <url> | grep -i 'description'.",
+        "priority": "medium"
+      },
+      "mechanism": "Omitting recommended Organization fields deprives AI engines of high-value entity attributes used during direct response synthesis.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -i 'description'"
+    },
+    {
+      "id": "F-008",
+      "title": "sameAs present but missing high-trust disambiguators: Wikidata, Wikipedia, Crunchbase",
+      "severity": "medium",
+      "evidence": "Found sameAs links to: Twitter/X, LinkedIn, Instagram, Facebook. Missing high-trust identity anchors: Wikidata, Wikipedia, Crunchbase. Wikidata/Wikipedia/Crunchbase entries are the strongest signals for AI entity resolution.",
+      "suggested_action": {
+        "summary": "Add high-trust entity links (Wikidata, Wikipedia, Crunchbase) to the sameAs array in Organization JSON-LD, populated from company records on Wikidata, Wikipedia, or Crunchbase, because AI crawlers prioritize structured knowledge bases over general social profiles when establishing entity trust. Verify: curl -s <url> | grep -E 'wikidata|crunchbase|wikipedia'.",
+        "priority": "medium"
+      },
+      "mechanism": "AI engines assign higher entity verification confidence to Wikidata, Wikipedia, and Crunchbase records than to social media accounts.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url> | grep -E 'wikidata|crunchbase|wikipedia'"
+    },
+    {
+      "id": "F-009",
+      "title": "About page lacks sufficient disambiguating identity facts (score: 1/6)",
+      "severity": "low",
+      "evidence": "About page: https://www.thekalesh.com/about. Detected disambiguating facts: industry vertical. Missing categories: founding year, location hq, team size, customer count, geographic reach. Generic About pages increase the risk of AI entity confusion.",
+      "suggested_action": {
+        "summary": "Expand the About page with concrete entity attributes, populated from corporate records covering founding year, HQ location, executive leadership, and industry classification, because vague marketing copy prevents AI systems from extracting factual entity triples. Verify: curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'.",
+        "priority": "low"
+      },
+      "mechanism": "Abstract marketing text without factual timestamps, locations, or organizational structure prevents LLMs from synthesizing reliable entity profiles.",
+      "fix_effort": "medium",
+      "verification": "curl -s <url>/about | grep -Ei 'founded|headquarter|locations|ceo|leadership'"
+    }
+  ],
+  "beyond_problem_suggestions": [
+    {
+      "title": "Cross-link verified entity profiles across independent authority platforms via sameAs",
+      "rationale": "Independent corroboration across Wikipedia, Crunchbase, LinkedIn, and Wikidata validates brand legitimacy and feeds entity resolution algorithms in knowledge graph construction (Appendix D/B).",
+      "mechanism": "LLM knowledge engines construct high-confidence entity nodes by resolving bidirectional sameAs references across independent high-authority knowledge bases.",
+      "priority": "high"
+    },
+    {
+      "title": "Publish a canonical facts page with unambiguous declarative plain-text assertions",
+      "rationale": "A dedicated /facts or /about page presenting one unambiguous plain-text sentence per core attribute (founding date, headquarters, leadership, core products) eliminates extraction ambiguity for LLM crawlers (Appendix C).",
+      "mechanism": "Declarative single-fact sentences minimize semantic parsing entropy during retrieval-augmented generation (RAG) and prevent hallucinated brand claims.",
+      "priority": "high"
+    },
+    {
+      "title": "Structure conversational FAQ sections with question-shaped headings matching user prompts",
+      "rationale": "Formulating headings as explicit natural-language questions directly mirrors user prompt patterns submitted to AI search engines (Appendix B).",
+      "mechanism": "Question-formatted headings maximize semantic vector cosine similarity against conversational user queries, triggering direct answer citations.",
+      "priority": "medium"
+    },
+    {
+      "title": "Implement hreflang annotations and locale-specific schema for regional disambiguation",
+      "rationale": "Explicit hreflang link tags and localized schema markup distinguish regional product lines, currencies, and language variations for global AI assistants (Appendix E).",
+      "mechanism": "Locale and alternate tags prevent search bots from conflating regional entities or surfacing incorrect currency and availability in localized AI answers.",
+      "priority": "medium"
+    },
+    {
+      "title": "Embed machine-readable TL;DR summary blocks at the top of transactional emails",
+      "rationale": "AI email summarizers (e.g., Apple Intelligence, Gemini in Gmail, Copilot) generate automatic summaries based on early email tokens, requiring key details upfront (Appendix F).",
+      "mechanism": "Structured key-value summary blocks at the beginning of email HTML ensure client-side AI summarizers extract order numbers, dates, and actions without truncation errors.",
+      "priority": "low"
+    },
+    {
+      "title": "Maintain accurate <lastmod> timestamps in sitemap.xml to signal content freshness",
+      "rationale": "Including precise, genuine <lastmod> dates in sitemap.xml enables AI crawlers with limited crawl budgets to discover and ingest fresh updates promptly (Appendix A).",
+      "mechanism": "AI search engines prioritize re-crawling URLs with recent sitemap <lastmod> timestamps, keeping their retrieval indexes and vector embeddings synchronized.",
+      "priority": "medium"
+    }
+  ]
+}

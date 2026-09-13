@@ -462,36 +462,33 @@ def audit_sitemap(base_url: str, rp: Optional[urllib.robotparser.RobotFileParser
 def audit_llms_txt(base_url: str) -> list[dict]:
     """Check for the presence of /llms.txt at the site root."""
     findings = []
-    llms_url = f"{base_url}/llms.txt"
+    llms_url = f"{base_url.rstrip('/')}/llms.txt"
     resp = safe_get(llms_url)
 
-    is_present = False
-    if resp and resp.status_code == 200 and resp.text.strip():
-        ct = resp.headers.get("Content-Type", "").lower()
-        # Avoid soft-404 HTML pages served with HTTP 200
-        is_html = "text/html" in ct or "<!doctype html" in resp.text[:200].lower() or "<html" in resp.text[:200].lower()
-        if not is_html:
-            is_present = True
+    # If the response status code is 200 and content is non-empty, llms.txt is present.
+    # Do not emit the "missing" finding.
+    if resp is not None and resp.status_code == 200 and resp.text.strip():
+        return findings
 
-    if not is_present:
-        status_info = f"HTTP {resp.status_code}" if resp else "unreachable"
-        findings.append(making_finding(
-            title="No /llms.txt file found at site root",
-            severity="low",
-            evidence=(
-                f"GET {llms_url} returned {status_info}. "
-                "/llms.txt is an emerging web convention (llmstxt.org) where sites publish "
-                "a curated, structured markdown summary of their content and documentation for LLMs."
-            ),
-            action=(
-                f"Publish an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, "
-                "because emerging AI reasoning agents consume /llms.txt as an optimized digest of site capabilities without crawling overhead. "
-                f"Verify: curl -sI {llms_url} | grep 'HTTP/'."
-            ),
-            mechanism="Absence of an /llms.txt file deprives LLM agents of a lightweight, standardized summary of brand offerings.",
-            fix_effort="low",
-            verification=f"curl -sI {llms_url}",
-        ))
+    # Only emit the "No /llms.txt file found" finding when genuinely 404, non-200, or unreachable.
+    status_info = f"HTTP {resp.status_code}" if resp else "unreachable"
+    findings.append(making_finding(
+        title="No /llms.txt file found at site root",
+        severity="low",
+        evidence=(
+            f"GET {llms_url} returned {status_info}. "
+            "/llms.txt is an emerging web convention (llmstxt.org) where sites publish "
+            "a curated, structured markdown summary of their content and documentation for LLMs."
+        ),
+        action=(
+            f"Publish an /llms.txt Markdown summary file at site root, populated from your core brand documentation and product catalog, "
+            "because emerging AI reasoning agents consume /llms.txt as an optimized digest of site capabilities without crawling overhead. "
+            f"Verify: curl -sI {llms_url} | grep 'HTTP/'."
+        ),
+        mechanism="Absence of an /llms.txt file deprives LLM agents of a lightweight, standardized summary of brand offerings.",
+        fix_effort="low",
+        verification=f"curl -sI {llms_url}",
+    ))
 
     return findings
 

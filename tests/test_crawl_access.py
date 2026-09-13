@@ -154,3 +154,34 @@ def test_crawler_matching_case_insensitive_and_wildcard():
     rp_exception = check_access.parse_robots_txt(exception_robots, "https://example.com")
     assert rp_exception.can_fetch("OAI-SearchBot", "https://example.com/")
     assert not rp_exception.can_fetch("GPTBot", "https://example.com/")
+
+
+def test_audit_llms_txt_present_no_finding(monkeypatch):
+    """Test that HTTP 200 with content on /llms.txt does NOT emit a 'missing' finding."""
+    mock_200 = MockResponse(status_code=200, text="# LLMs.txt Documentation\n\nBrand info.")
+    monkeypatch.setattr(check_access, "safe_get", lambda url, **kwargs: mock_200)
+
+    findings = check_access.audit_llms_txt("https://example.com")
+    assert findings == []
+
+
+def test_audit_llms_txt_missing_emits_finding_on_404(monkeypatch):
+    """Test that HTTP 404 on /llms.txt emits 'No /llms.txt file found at site root' with HTTP 404 in evidence."""
+    mock_404 = MockResponse(status_code=404, text="Not Found")
+    monkeypatch.setattr(check_access, "safe_get", lambda url, **kwargs: mock_404)
+
+    findings = check_access.audit_llms_txt("https://example.com")
+    assert len(findings) == 1
+    assert findings[0]["title"] == "No /llms.txt file found at site root"
+    assert "HTTP 404" in findings[0]["evidence"]
+
+
+def test_audit_llms_txt_missing_emits_finding_on_connection_error(monkeypatch):
+    """Test that connection error on /llms.txt emits 'No /llms.txt file found at site root' with 'unreachable' in evidence."""
+    monkeypatch.setattr(check_access, "safe_get", lambda url, **kwargs: None)
+
+    findings = check_access.audit_llms_txt("https://example.com")
+    assert len(findings) == 1
+    assert findings[0]["title"] == "No /llms.txt file found at site root"
+    assert "unreachable" in findings[0]["evidence"]
+

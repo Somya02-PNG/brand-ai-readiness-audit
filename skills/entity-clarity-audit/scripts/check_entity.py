@@ -428,12 +428,21 @@ def run(url: str) -> list[dict]:
             verification="curl -s <url> | grep -i '\"@type\":\\s*\"Organization\"'",
         ))
 
-    # ── Finding 3: No About page ───────────────────────────────────────────────
-    about_checked = any(
-        safe_get(base_url + path) and
-        (safe_get(base_url + path)).status_code == 200
-        for path in ABOUT_PATHS[:3]
-    )
+    # ── Finding 3: About page ───────────────────────────────────────────────
+    if not about_page_content:
+        for path in ABOUT_PATHS[:5]:
+            time.sleep(CRAWL_DELAY)
+            r = safe_get(base_url + path)
+            if r and r.status_code == 200 and r.text.strip():
+                try:
+                    s = BeautifulSoup(r.text, "lxml")
+                except Exception:
+                    s = BeautifulSoup(r.text, "html.parser")
+                text = s.get_text(separator=" ", strip=True)
+                if len(text) > 100:
+                    about_page_content = (base_url + path, text)
+                    break
+
     if not about_page_content:
         findings.append(make_finding(
             title="No About/Company page found",
