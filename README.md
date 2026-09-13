@@ -189,6 +189,8 @@ All 7 skills in this repository have been validated against the official Agent S
 
 Full validation commands, terminal execution logs, and detailed checklists confirming frontmatter, deterministic procedures, and read-only behavior for every skill are documented in [VALIDATION.md](VALIDATION.md).
 
+See [TESTING.md](TESTING.md) for real-world validation evidence across 8 unseen websites, including bugs discovered and fixed during testing.
+
 ---
 
 ## Testing
@@ -222,6 +224,7 @@ brand-ai-readiness-audit/
 ├── LICENSE                                ← MIT License
 ├── README.md                              ← Marketplace documentation
 ├── SECURITY.md                            ← Safety guardrails & read-only policy
+├── TESTING.md                             ← Real-world testing evidence & bugs found
 ├── VALIDATION.md                          ← Agent Skills specification validation logs
 ├── marketplace.json                       ← agentskills.io marketplace entrypoint definition
 ├── requirements.txt                       ← Pinned dependencies
