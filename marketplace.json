@@ -4,7 +4,7 @@
   "description": "An agent skill marketplace that audits any website URL and produces a structured JSON report identifying why a brand is hard for AI assistants to discover and cite, and why on-site visitors fail to engage — with prioritized, actionable fixes.",
   "license": "MIT",
   "author": "brand-ai-readiness-audit contributors",
-  "homepage": "https://github.com/brand-ai-readiness-audit",
+  "homepage": "https://github.com/Somya02-PNG/brand-ai-readiness-audit",
   "keywords": ["ai-readiness", "seo", "structured-data", "brand", "audit", "discoverability", "engagement"],
   "skills": [
     {
